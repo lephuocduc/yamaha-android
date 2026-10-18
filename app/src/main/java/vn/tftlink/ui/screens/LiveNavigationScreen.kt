@@ -45,7 +45,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,6 +97,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
 
     var showMiniPreview by remember { mutableStateOf(true) }
     var showSearchDialog by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     val defaultPosition = LatLng(10.7769, 106.7009) // Ho Chi Minh City
     val cameraPositionState = rememberCameraPositionState {
@@ -144,7 +147,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     Marker(
                         state = MarkerState(position = route.coordinates.last()),
                         title = "Điểm đến",
-                        snippet = instruction.roadName
+                        snippet = instruction.nextRoadName
                     )
                 }
             }
@@ -207,7 +210,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = instruction.roadName,
+                                    text = instruction.nextRoadName,
                                     color = TextPrimary,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
@@ -287,7 +290,9 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
             FloatingActionButton(
                 onClick = {
                     currentLoc?.let {
-                        cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(it, 16.5f))
+                        coroutineScope.launch {
+                            cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(it, 16.5f))
+                        }
                     }
                 },
                 containerColor = DarkSurfaceCard,

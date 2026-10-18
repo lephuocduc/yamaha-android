@@ -17,6 +17,7 @@ class StreetCrossProtocol {
         const val STREET_CROSS_UUID = "00007220-0000-1000-8000-00805F9B34FB"
         const val SPP_UUID = "00001101-0000-1000-8000-00805F9B34FB"
         const val SOFTWARE_PART_NUMBER = "006-B4160" // Mã phần mềm chuẩn cho XMAX / NMAX
+        const val softwarePartNumber = SOFTWARE_PART_NUMBER
         const val FALLBACK_PART_NUMBER = "006-B3952-10"
     }
 

@@ -290,12 +290,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val route = OSMRoute(
             coordinates = listOf(start, LatLng((start.latitude + dest.latitude)/2, (start.longitude + dest.longitude)/2), dest),
             distanceMeters = dist,
-            durationSeconds = etaSecs
+            durationSeconds = etaSecs.toDouble()
         )
         _activeRoute.value = route
         _currentInstruction.value = NavigationInstruction(
-            text = "Đi thẳng hướng $title",
-            roadName = title,
+            detailedInstruction = "Đi thẳng hướng $title",
+            nextRoadName = title,
+            currentRoadName = title,
             distanceMeters = dist.toInt(),
             direction = NavigationDirection.STRAIGHT,
             totalTimeRemainingSeconds = etaSecs

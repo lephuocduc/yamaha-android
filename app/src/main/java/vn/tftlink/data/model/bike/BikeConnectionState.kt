@@ -12,6 +12,9 @@ enum class BikeConnectionState(val displayNameVi: String) {
     STREAMING("Đang truyền bản đồ lên màn hình TFT"),
     ERROR("Lỗi kết nối");
 
+    val rawValue: String
+        get() = displayNameVi
+
     val isConnectedOrStreaming: Boolean
         get() = this == CONNECTED || this == STREAMING
 }

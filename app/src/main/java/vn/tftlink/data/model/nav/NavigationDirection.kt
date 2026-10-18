@@ -15,6 +15,9 @@ enum class NavigationDirection(val code: Int) {
     ROUNDABOUT(9),
     DESTINATION(10);
 
+    val rawValue: Int
+        get() = code
+
     val descriptionVi: String
         get() = when (this) {
             STRAIGHT -> "Đi thẳng"

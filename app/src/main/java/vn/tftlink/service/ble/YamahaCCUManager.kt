@@ -863,7 +863,22 @@ class YamahaCCUManager(
         }
     }
 
+    fun startStreaming() {
+        if (_state.value == BikeConnectionState.CONNECTED || _state.value == BikeConnectionState.AUTHENTICATING) {
+            _state.value = BikeConnectionState.STREAMING
+            log("Bắt đầu truyền luồng màn hình TFT")
+        }
+    }
+
+    fun stopStreaming() {
+        if (_state.value == BikeConnectionState.STREAMING) {
+            _state.value = BikeConnectionState.CONNECTED
+            log("Tạm dừng truyền luồng màn hình TFT")
+        }
+    }
+
     fun disconnect() {
+        stopStreaming()
         handleDisconnection()
         log("Đã ngắt kết nối với xe")
     }
