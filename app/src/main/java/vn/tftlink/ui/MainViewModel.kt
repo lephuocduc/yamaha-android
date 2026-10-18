@@ -37,6 +37,10 @@ import vn.tftlink.service.update.AppUpdateInfo
 import vn.tftlink.service.update.AppUpdateManager
 import vn.tftlink.service.update.UpdateStatus
 import android.content.Intent
+import android.location.LocationManager
+import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import vn.tftlink.service.nav.GoogleMapsShareResolver
 import vn.tftlink.service.nav.ResolvedDestination
 import vn.tftlink.service.renderer.ClusterMapSource
@@ -103,6 +107,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Shared destination from Google Maps app
     private val _sharedDestinationEvent = MutableStateFlow<ResolvedDestination?>(null)
     val sharedDestinationEvent: StateFlow<ResolvedDestination?> = _sharedDestinationEvent.asStateFlow()
+
+    // Route calculation error message
+    val routeErrorMessage: StateFlow<String?> = navEngine.routeErrorMessage
+    fun clearRouteErrorMessage() = navEngine.clearRouteErrorMessage()
 
     // Parking Location (Find My Bike)
     val parkedLocation: StateFlow<ParkedBikeLocation?> = parkingManager.lastParkedLocation
@@ -182,6 +190,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         try {
+            // Lấy vị trí ngay lập tức từ LocationManager nếu FusedLocation chưa sẵn sàng
+            val locMgr = application.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            val providers = locMgr?.getProviders(true) ?: emptyList()
+            for (p in providers) {
+                val l = locMgr?.getLastKnownLocation(p)
+                if (l != null) {
+                    val latLng = LatLng(l.latitude, l.longitude)
+                    navEngine.updateLocation(latLng, l.speed * 3.6, l.bearing)
+                    streamRenderer.updateLocation(latLng, l.bearing)
+                    break
+                }
+            }
+
             fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
                 if (loc != null) {
                     val latLng = LatLng(loc.latitude, loc.longitude)
@@ -312,10 +333,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun calculateRoute(
         destination: LatLng,
         destinationTitle: String = "Điểm đến",
-        autoStart: Boolean = true
+        autoStart: Boolean = false
     ) {
+        val origin = navEngine.currentLocation.value ?: navEngine.getEffectiveLocation()
         navEngine.calculateRoute(
-            origin = navEngine.currentLocation.value,
+            origin = origin,
             destination = destination,
             destinationTitle = destinationTitle,
             autoStart = autoStart
@@ -513,8 +535,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (resolved != null) {
                     _sharedDestinationEvent.value = resolved
                     val target = LatLng(resolved.latitude, resolved.longitude)
-                    calculateRoute(target, resolved.title, autoStart = true)
-                    navEngine.speakInstruction("Đã nhận điểm đến từ Google Maps: ${resolved.title}. Bắt đầu dẫn đường.")
+                    calculateRoute(target, resolved.title, autoStart = false)
+                    navEngine.speakInstruction("Đã nhận điểm đến từ Google Maps: ${resolved.title}.")
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(getApplication(), "Không thể nhận diện toạ độ từ liên kết chia sẻ.", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }

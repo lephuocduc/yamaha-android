@@ -95,6 +95,8 @@ fun MainAppRoot(viewModel: MainViewModel) {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
     val isNavigating by viewModel.isNavigating.collectAsState()
+    val activeRoute by viewModel.activeRoute.collectAsState()
+    val isCalculatingRoute by viewModel.isCalculatingRoute.collectAsState()
     val sharedDest by viewModel.sharedDestinationEvent.collectAsState()
 
     // Tự động chuyển qua tab Bản đồ khi nhận địa điểm từ Google Maps
@@ -106,9 +108,9 @@ fun MainAppRoot(viewModel: MainViewModel) {
         }
     }
 
-    // Tự động chuyển qua tab Bản đồ khi bắt đầu dẫn đường
-    LaunchedEffect(isNavigating) {
-        if (isNavigating) {
+    // Tự động chuyển qua tab Bản đồ khi bắt đầu dẫn đường hoặc có lộ trình mới
+    LaunchedEffect(isNavigating, activeRoute, isCalculatingRoute) {
+        if (isNavigating || activeRoute != null || isCalculatingRoute) {
             selectedTab = 1
         }
     }

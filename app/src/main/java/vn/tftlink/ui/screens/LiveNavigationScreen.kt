@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AltRoute
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Directions
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.filled.TurnLeft
 import androidx.compose.material.icons.filled.TurnRight
 import androidx.compose.material.icons.filled.TurnSlightLeft
 import androidx.compose.material.icons.filled.TurnSlightRight
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -88,6 +90,7 @@ import com.google.android.gms.maps.model.LatLng
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.MapView
@@ -168,6 +171,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
     val parkedLoc by viewModel.parkedLocation.collectAsState()
     val arrivalMsg by viewModel.arrivalMessage.collectAsState()
     val isCalculatingRoute by viewModel.isCalculatingRoute.collectAsState()
+    val routeErrorMsg by viewModel.routeErrorMessage.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     val homePlace by viewModel.homePlace.collectAsState()
@@ -198,14 +202,43 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
         } catch (_: Exception) {}
     }
 
-    // Auto follow user location & heading
+    // Khung nhìn bao quát toàn bộ lộ trình khi đã tính toán xong
+    LaunchedEffect(activeRoute) {
+        val route = activeRoute ?: return@LaunchedEffect
+        if (route.coordinates.isNotEmpty() && osmdroidMapView != null) {
+            val lats = route.coordinates.map { it.latitude }
+            val lons = route.coordinates.map { it.longitude }
+            val minLat = lats.minOrNull() ?: return@LaunchedEffect
+            val maxLat = lats.maxOrNull() ?: return@LaunchedEffect
+            val minLon = lons.minOrNull() ?: return@LaunchedEffect
+            val maxLon = lons.maxOrNull() ?: return@LaunchedEffect
+
+            val latMargin = ((maxLat - minLat) * 0.18).coerceAtLeast(0.005)
+            val lonMargin = ((maxLon - minLon) * 0.18).coerceAtLeast(0.005)
+            val box = BoundingBox(
+                maxLat + latMargin,
+                maxLon + lonMargin,
+                minLat - latMargin,
+                minLon - lonMargin
+            )
+            osmdroidMapView?.post {
+                try {
+                    osmdroidMapView?.zoomToBoundingBox(box, true, 130)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    // Tự động bám theo vị trí người lái khi đang dẫn đường (Turn-by-Turn)
     LaunchedEffect(currentLoc, isNavigating) {
         val loc = currentLoc ?: return@LaunchedEffect
-        osmdroidMapView?.controller?.animateTo(
-            GeoPoint(loc.latitude, loc.longitude),
-            if (isNavigating) 17.5 else 16.0,
-            600L
-        )
+        if (isNavigating) {
+            osmdroidMapView?.controller?.animateTo(
+                GeoPoint(loc.latitude, loc.longitude),
+                17.5,
+                600L
+            )
+        }
     }
 
     LaunchedEffect(heading, isNorthUp) {
@@ -570,7 +603,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                     homePlace?.let { home ->
                                         Button(
                                             onClick = {
-                                                viewModel.calculateRoute(home.coordinate, home.name, autoStart = true)
+                                                viewModel.calculateRoute(home.coordinate, home.name, autoStart = false)
                                                 isSearchFocused = false
                                                 searchQuery = ""
                                             },
@@ -583,12 +616,12 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Text("Về nhà", fontSize = 11.sp, color = TextPrimary)
                                         }
-                                    }
+                                     }
 
-                                    workPlace?.let { work ->
+                                     workPlace?.let { work ->
                                         Button(
                                             onClick = {
-                                                viewModel.calculateRoute(work.coordinate, work.name, autoStart = true)
+                                                viewModel.calculateRoute(work.coordinate, work.name, autoStart = false)
                                                 isSearchFocused = false
                                                 searchQuery = ""
                                             },
@@ -601,7 +634,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Text("Đi làm", fontSize = 11.sp, color = TextPrimary)
                                         }
-                                    }
+                                     }
                                 }
                             }
 
@@ -627,7 +660,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                                 .fillMaxWidth()
                                                 .padding(vertical = 3.dp)
                                                 .clickable {
-                                                    viewModel.calculateRoute(place.coordinate, place.name, autoStart = true)
+                                                    viewModel.calculateRoute(place.coordinate, place.name, autoStart = false)
                                                     isSearchFocused = false
                                                     searchQuery = ""
                                                     viewModel.searchPlaces("")
@@ -696,7 +729,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     }
                     Button(
                         onClick = {
-                            viewModel.calculateRoute(pin, droppedPinTitle, autoStart = true)
+                            viewModel.calculateRoute(pin, droppedPinTitle, autoStart = false)
                             droppedPin = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan),
@@ -706,6 +739,69 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                         Icon(Icons.Default.Directions, contentDescription = null, tint = Color.Black)
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Dẫn đường đến điểm này", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // 3.5. Route Calculation Loading Indicator
+        if (isCalculatingRoute) {
+            Card(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(start = 16.dp, end = 16.dp, bottom = 24.dp)
+                    .fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
+                border = BorderStroke(1.5.dp, YamahaCyan),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    CircularProgressIndicator(
+                        color = YamahaCyan,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Đang lập lộ trình xe máy...",
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            text = "Tối ưu hóa đường đi, ưu tiên đường lớn và tránh cao tốc",
+                            color = TextSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // 3.6. Route Calculation Error Notification
+        routeErrorMsg?.let { errorMsg ->
+            Card(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(start = 16.dp, end = 16.dp, bottom = 24.dp)
+                    .fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
+                border = BorderStroke(1.5.dp, NeonRed),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = NeonRed, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(errorMsg, color = TextPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { viewModel.clearRouteErrorMessage() }) {
+                        Icon(Icons.Default.Close, contentDescription = null, tint = TextSecondary)
                     }
                 }
             }
@@ -838,7 +934,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     currentLoc?.let { loc ->
                         osmdroidMapView?.controller?.animateTo(
                             GeoPoint(loc.latitude, loc.longitude),
-                            16.5,
+                            if (isNavigating) 17.5 else 16.5,
                             600L
                         )
                     }
@@ -850,10 +946,37 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
             ) {
                 Icon(Icons.Default.MyLocation, contentDescription = "Vị trí của tôi", modifier = Modifier.size(22.dp))
             }
+
+            // Route Overview Button (Zoom to see whole route)
+            if (activeRoute != null) {
+                FloatingActionButton(
+                    onClick = {
+                        val route = activeRoute ?: return@FloatingActionButton
+                        if (route.coordinates.isNotEmpty() && osmdroidMapView != null) {
+                            val lats = route.coordinates.map { it.latitude }
+                            val lons = route.coordinates.map { it.longitude }
+                            val minLat = lats.minOrNull() ?: return@FloatingActionButton
+                            val maxLat = lats.maxOrNull() ?: return@FloatingActionButton
+                            val minLon = lons.minOrNull() ?: return@FloatingActionButton
+                            val maxLon = lons.maxOrNull() ?: return@FloatingActionButton
+                            val latMargin = ((maxLat - minLat) * 0.18).coerceAtLeast(0.005)
+                            val lonMargin = ((maxLon - minLon) * 0.18).coerceAtLeast(0.005)
+                            val box = BoundingBox(maxLat + latMargin, maxLon + lonMargin, minLat - latMargin, minLon - lonMargin)
+                            osmdroidMapView?.zoomToBoundingBox(box, true, 130)
+                        }
+                    },
+                    containerColor = DarkSurfaceCard,
+                    contentColor = NeonGreen,
+                    shape = CircleShape,
+                    modifier = Modifier.size(46.dp)
+                ) {
+                    Icon(Icons.Default.AltRoute, contentDescription = "Xem toàn bộ lộ trình", modifier = Modifier.size(22.dp))
+                }
+            }
         }
 
         // 6. Mini TFT Mirror Card (Bottom Left)
-        if (showMiniPreview && !isNavigating) {
+        if (showMiniPreview && !isNavigating && activeRoute == null && droppedPin == null && !isCalculatingRoute) {
             Card(
                 modifier = Modifier
                     .align(Alignment.BottomStart)

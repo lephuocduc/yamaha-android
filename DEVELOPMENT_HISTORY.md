@@ -611,3 +611,38 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
   3. **Thêm nút Hủy và Mở trình duyệt tải trực tiếp**:
      - Trong trạng thái `UpdateStatus.Checking`: Bổ sung nút *"Hủy"* để người dùng có thể chủ động dừng kiểm tra bất kỳ lúc nào.
      - Trong trạng thái `UpdateStatus.Error`: Bổ sung nút *"Mở trình duyệt"* trỏ thẳng đến trang GitHub Releases, giúp người dùng có phương án tải file APK trực tiếp bằng trình duyệt Chrome nếu máy gặp sự cố mạng nội bộ.
+
+---
+
+### 📌 Quy tắc 12: Khắc phục triệt để lỗi Dẫn đường khi thả ghim bản đồ & Chia sẻ vị trí từ Google Maps (v0.5.34 Build 64)
+- **Các vấn đề người dùng báo cáo**:
+  1. *Nhấn giữ 1 vị trí trên bản đồ rồi bấm dẫn đường đến điểm này nhưng không có gì hiện ra hết.*
+  2. *Chia sẻ vị trí từ Google Maps sang app thì chỉ ghi "Đã nhận địa chỉ..." rồi không có gì diễn ra tiếp theo.*
+- **Nguyên nhân gốc rễ được tìm thấy trong mã nguồn**:
+  1. **Thoát ngầm khi toạ độ GPS ban đầu là null (`if (start == null) return`)**:
+     - Trong `NavigationEngine.calculateRoute`, biến bắt đầu được gán `val start = origin ?: _currentLocation.value`. Nếu `start == null` thì hàm lập tức `return` âm thầm.
+     - Khi người dùng ở trong nhà, vừa mở app hoặc máy chưa fix kịp vệ tinh GPS, `_currentLocation.value` luôn là `null`. Do đó khi bấm "Dẫn đường đến điểm này" hoặc nhận Intent chia sẻ từ Google Maps lúc app khởi động, lệnh tính đường bị hủy ngay lập tức mà không có thông báo hay hành động nào.
+  2. **Thiếu phản hồi trực quan khi đang tính toán lộ trình (`isCalculatingRoute`)**:
+     - Biến `isCalculatingRoute` được định nghĩa trong ViewModel nhưng giao diện `LiveNavigationScreen.kt` hoàn toàn không có Card hoặc thanh chờ tải nào. Người dùng không biết hệ thống đang liên hệ máy chủ tính toán.
+  3. **Không tự động zoom bao quát lộ trình (`zoomToBoundingBox`)**:
+     - Khi tính toán xong lộ trình, camera bản đồ bị ép zoom sát vào vị trí người lái ở mức 17.5 (~50 mét) do `autoStart = true` kích hoạt `isNavigating = true` ngay lập tức, khiến toàn bộ đường đi và điểm đến đều nằm ngoài tầm nhìn màn hình, tạo cảm giác "không có gì hiện ra".
+  4. **Hạn chế trong phân tích URL chia sẻ Google Maps (`GoogleMapsShareResolver`)**:
+     - Nhiều liên kết chia sẻ từ Google Maps chứa toạ độ điểm ghim trong chuỗi data tham số `!3d<lat>!4d<lng>` (chứ không phải `@lat,lng`), hoặc dùng tham số `ll=`, hoặc trả về trang HTML chứa thẻ chuyển hướng `<meta http-equiv="refresh">` / `<link rel="canonical">`.
+     - Bộ phân giải `Geocoder` tích hợp của Android thường bị lỗi hoặc không phản hồi trên các dòng máy nội địa / thiết bị không cài đặt Google Play Services.
+- **Giải pháp hoàn thiện & Chuẩn hóa**:
+  1. **Lưu vết và cơ chế Fallback toạ độ GPS 3 tầng (`getEffectiveLocation`)**:
+     - Trong `NavigationEngine`, mỗi lần GPS cập nhật đều lưu tọa độ vào `SharedPreferences (nav_engine_prefs)`.
+     - Ngay khi khởi tạo app, `restoreLastKnownLocation()` phục hồi ngay tọa độ phiên trước đó.
+     - Hàm `getEffectiveLocation()` lần lượt kiểm tra: (1) GPS hiện tại -> (2) Tọa độ đã lưu trong SharedPreferences -> (3) `LocationManager` (GPS / Network provider) -> (4) Tọa độ trung tâm mặc định tại Việt Nam (`10.7769, 106.7009`). Nhờ đó `start` **không bao giờ bị null**, tính năng dẫn đường luôn luôn kích hoạt thành công.
+  2. **Card thông báo đang lập lộ trình & Thông báo lỗi kết nối**:
+     - Bổ sung thẻ thông báo nổi bật màu xanh Yamaha Cyan: *"Đang lập lộ trình xe máy... Tối ưu hóa đường đi, ưu tiên đường lớn và tránh cao tốc"* kèm vòng xoay tiến trình khi `isCalculatingRoute = true`.
+     - Bổ sung thẻ cảnh báo đỏ nổi bật kèm nút đóng nếu mạng bị ngắt hoặc không tìm thấy đường đi.
+  3. **Tự động căn chỉnh toàn bộ lộ trình & Thẻ chọn tuyến đường**:
+     - Thêm `LaunchedEffect(activeRoute)`: Khi có lộ trình, Osmdroid `MapView` tự động tính toán `BoundingBox` bao trọn điểm xuất phát, toàn bộ đường đi và đích đến (kèm đệm 18%), gọi `mapView.zoomToBoundingBox(...)` mượt mà.
+     - Khi bấm "Dẫn đường đến điểm này" hoặc chia sẻ từ Google Maps, chuyển `autoStart = false` để hiển thị **Thẻ chọn tuyến đường (Route Selection Card)** hiển thị chi tiết: Thời gian, quãng đường, tên đường chính, các tuyến thay thế (Tuyến 1, Tuyến 2) và nút bấm lớn màu xanh lá **"BẮT ĐẦU DẪN ĐƯỜNG"**.
+     - Bổ sung nút nổi **"Xem toàn bộ lộ trình"** (`Icons.Default.AltRoute`) giúp người lái có thể xem lại toàn cảnh tuyến đường bất kỳ lúc nào khi đang di chuyển.
+  4. **Nâng cấp toàn diện bộ phân giải Google Maps Share Resolver**:
+     - Bổ sung regex nhận diện toạ độ ghim chính xác `!3d(-?\\d+\\.\\d+)!4d(-?\\d+\\.\\d+)` và `ll=`.
+     - Bổ sung giải mã URL chuyển hướng từ thẻ `<meta refresh>` và `<link rel="canonical">` trong mã HTML.
+     - Tích hợp cơ chế Geocoding dự phòng bằng **Photon OpenStreetMap API** (`photon.komoot.io`), đảm bảo 100% địa chỉ chia sẻ từ Google Maps tại Việt Nam đều được chuyển thành toạ độ chính xác ngay cả khi không có Google Play Services.
+     - `MainActivity` tự động chuyển thẳng sang tab Bản đồ (`selectedTab = 1`) ngay khi nhận được liên kết chia sẻ hoặc khi đang tính toán lộ trình.

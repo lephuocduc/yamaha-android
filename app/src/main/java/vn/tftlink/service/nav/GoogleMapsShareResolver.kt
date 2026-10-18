@@ -39,14 +39,20 @@ object GoogleMapsShareResolver {
     // Regex trích xuất tọa độ dạng @lat,lng trong URL của Google Maps
     private val AT_COORD_REGEX = Pattern.compile("@(-?\\d+\\.\\d+),(-?\\d+\\.\\d+)")
 
-    // Regex trích xuất tọa độ dạng ?q=lat,lng hoặc &query=lat,lng
-    private val Q_COORD_REGEX = Pattern.compile("[?&](?:q|query|daddr|destination)=(-?\\d+\\.\\d+),(-?\\d+\\.\\d+)")
+    // Regex trích xuất tọa độ dạng data=!3dlat!4dlng (toạ độ ghim chính xác trong Google Maps place URL)
+    private val DATA_COORD_REGEX = Pattern.compile("!3d(-?\\d+\\.\\d+)!4d(-?\\d+\\.\\d+)")
+
+    // Regex trích xuất tọa độ dạng ?q=lat,lng hoặc &query=lat,lng hoặc near=lat,lng
+    private val Q_COORD_REGEX = Pattern.compile("[?&](?:q|query|daddr|destination|near|ll)=(-?\\d+\\.\\d+),(-?\\d+\\.\\d+)")
 
     // Regex trích xuất tọa độ trực tiếp trong văn bản (VD: "10.7725, 106.6578")
     private val PURE_COORD_REGEX = Pattern.compile("(-?\\d{1,2}\\.\\d+)\\s*,\\s*(-?\\d{1,3}\\.\\d+)")
 
     // Regex trích xuất tên địa điểm trong URL dạng /place/Tên+Địa+Điểm/
     private val PLACE_NAME_REGEX = Pattern.compile("/place/([^/@]+)")
+
+    // Regex trích xuất tham số tìm kiếm ?q=Tên+Địa+Điểm
+    private val SEARCH_QUERY_REGEX = Pattern.compile("[?&](?:q|query)=([^&]+)")
 
     suspend fun resolve(context: Context, sharedText: String?, uri: Uri?): ResolvedDestination? {
         return withContext(Dispatchers.IO) {
@@ -165,7 +171,18 @@ object GoogleMapsShareResolver {
 
         Log.d(TAG, "Đã mở rộng URL Google Maps: $finalUrl")
 
-        // 1. Tìm toạ độ @lat,lng
+        // 1. Tìm toạ độ chính xác dạng !3dlat!4dlng trong dữ liệu place của Google Maps
+        val dataMatcher = DATA_COORD_REGEX.matcher(finalUrl)
+        if (dataMatcher.find()) {
+            val lat = dataMatcher.group(1)?.toDoubleOrNull()
+            val lng = dataMatcher.group(2)?.toDoubleOrNull()
+            if (lat != null && lng != null) {
+                val title = hintTitle ?: extractPlaceNameFromUrl(finalUrl) ?: reverseGeocode(context, lat, lng) ?: "Vị trí Google Maps"
+                return ResolvedDestination(lat, lng, title)
+            }
+        }
+
+        // 2. Tìm toạ độ @lat,lng
         val atMatcher = AT_COORD_REGEX.matcher(finalUrl)
         if (atMatcher.find()) {
             val lat = atMatcher.group(1)?.toDoubleOrNull()
@@ -176,7 +193,7 @@ object GoogleMapsShareResolver {
             }
         }
 
-        // 2. Tìm toạ độ ?q=lat,lng
+        // 3. Tìm toạ độ ?q=lat,lng hoặc ll=lat,lng
         val qMatcher = Q_COORD_REGEX.matcher(finalUrl)
         if (qMatcher.find()) {
             val lat = qMatcher.group(1)?.toDoubleOrNull()
@@ -187,12 +204,30 @@ object GoogleMapsShareResolver {
             }
         }
 
-        // 3. Nếu trong URL có tên địa điểm /place/Tên+Địa+Điểm
+        // 4. Nếu trong URL có tên địa điểm /place/Tên+Địa+Điểm
         val placeName = extractPlaceNameFromUrl(finalUrl) ?: hintTitle
         if (!placeName.isNullOrBlank()) {
             val geocoded = geocodeAddress(context, placeName)
             if (geocoded != null) {
                 return ResolvedDestination(geocoded.first, geocoded.second, placeName)
+            }
+        }
+
+        // 5. Nếu trong URL có tham số tìm kiếm ?q=Tên+Địa+Điểm
+        val queryMatcher = SEARCH_QUERY_REGEX.matcher(finalUrl)
+        if (queryMatcher.find()) {
+            val queryText = queryMatcher.group(1)?.let {
+                try {
+                    URLDecoder.decode(it.replace("+", " "), StandardCharsets.UTF_8.name())
+                } catch (_: Exception) {
+                    it.replace("+", " ")
+                }
+            }
+            if (!queryText.isNullOrBlank()) {
+                val geocoded = geocodeAddress(context, queryText)
+                if (geocoded != null) {
+                    return ResolvedDestination(geocoded.first, geocoded.second, queryText)
+                }
             }
         }
 
@@ -207,8 +242,22 @@ object GoogleMapsShareResolver {
                 .build()
 
             val response = httpClient.newCall(request).execute()
-            val finalUrl = response.request.url.toString()
+            var finalUrl = response.request.url.toString()
+            val body = response.body?.string() ?: ""
             response.close()
+
+            // Nếu redirect chưa ra URL Google Maps chứa toạ độ, tìm link meta refresh hoặc canonical trong body
+            if (!finalUrl.contains("@") && !finalUrl.contains("!3d")) {
+                val metaMatcher = Pattern.compile("<meta[^>]+content=[\"'][^\"']*url=([^\"']+)[\"']", Pattern.CASE_INSENSITIVE).matcher(body)
+                if (metaMatcher.find()) {
+                    finalUrl = metaMatcher.group(1) ?: finalUrl
+                } else {
+                    val canonicalMatcher = Pattern.compile("<link[^>]+rel=[\"']canonical[\"'][^>]+href=[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE).matcher(body)
+                    if (canonicalMatcher.find()) {
+                        finalUrl = canonicalMatcher.group(1) ?: finalUrl
+                    }
+                }
+            }
             finalUrl
         } catch (e: Exception) {
             Log.w(TAG, "Không thể theo dõi redirect cho $url: ${e.message}")
@@ -229,19 +278,47 @@ object GoogleMapsShareResolver {
         return null
     }
 
-    private fun geocodeAddress(context: Context, address: String): Pair<Double, Double>? {
-        return try {
+    private suspend fun geocodeAddress(context: Context, address: String): Pair<Double, Double>? {
+        // 1. Thử dùng Android Geocoder tích hợp
+        try {
             val geocoder = Geocoder(context, Locale("vi", "VN"))
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val list = geocoder.getFromLocationName(address, 1)
-                list?.firstOrNull()?.let { Pair(it.latitude, it.longitude) }
+            val list = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                geocoder.getFromLocationName(address, 1)
             } else {
                 @Suppress("DEPRECATION")
-                val list = geocoder.getFromLocationName(address, 1)
-                list?.firstOrNull()?.let { Pair(it.latitude, it.longitude) }
+                geocoder.getFromLocationName(address, 1)
+            }
+            val first = list?.firstOrNull()
+            if (first != null) {
+                return Pair(first.latitude, first.longitude)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Geocoder thất bại cho địa chỉ '$address': ${e.message}")
+            Log.w(TAG, "Android Geocoder thất bại cho '$address': ${e.message}")
+        }
+
+        // 2. Dự phòng bằng Photon OpenStreetMap Geocoding API (Hỗ trợ 100% thiết bị không có Google Play Services)
+        return try {
+            val encoded = java.net.URLEncoder.encode(address.trim(), "UTF-8").replace("+", "%20")
+            val req = Request.Builder()
+                .url("https://photon.komoot.io/api/?q=$encoded&limit=1")
+                .header("User-Agent", "NConnect-Yamaha-Android/1.0 (contact: info@tftlink.vn)")
+                .build()
+            val resp = httpClient.newCall(req).execute()
+            if (resp.isSuccessful) {
+                val json = org.json.JSONObject(resp.body?.string() ?: "")
+                val features = json.optJSONArray("features")
+                if (features != null && features.length() > 0) {
+                    val geom = features.getJSONObject(0).optJSONObject("geometry")
+                    val coords = geom?.optJSONArray("coordinates")
+                    if (coords != null && coords.length() >= 2) {
+                        val lon = coords.getDouble(0)
+                        val lat = coords.getDouble(1)
+                        return Pair(lat, lon)
+                    }
+                }
+            }
+            null
+        } catch (_: Exception) {
             null
         }
     }

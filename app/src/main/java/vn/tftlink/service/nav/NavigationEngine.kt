@@ -1,7 +1,9 @@
 package vn.tftlink.service.nav
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Geocoder
+import android.location.LocationManager
 import android.os.Build
 import android.speech.tts.TextToSpeech
 import com.google.android.gms.maps.model.LatLng
@@ -133,8 +135,59 @@ class NavigationEngine(
     private var hasSpoken300mAlert = false
     private var hasSpoken100mAlert = false
 
+    private val _routeErrorMessage = MutableStateFlow<String?>(null)
+    val routeErrorMessage: StateFlow<String?> = _routeErrorMessage.asStateFlow()
+
+    fun clearRouteErrorMessage() {
+        _routeErrorMessage.value = null
+    }
+
     init {
         initTts()
+        restoreLastKnownLocation()
+    }
+
+    private fun restoreLastKnownLocation() {
+        try {
+            val prefs = context.getSharedPreferences("nav_engine_prefs", Context.MODE_PRIVATE)
+            val lat = prefs.getString("last_lat", null)?.toDoubleOrNull()
+            val lng = prefs.getString("last_lng", null)?.toDoubleOrNull()
+            if (lat != null && lng != null) {
+                _currentLocation.value = LatLng(lat, lng)
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun getEffectiveLocation(): LatLng {
+        _currentLocation.value?.let { return it }
+        try {
+            val prefs = context.getSharedPreferences("nav_engine_prefs", Context.MODE_PRIVATE)
+            val lat = prefs.getString("last_lat", null)?.toDoubleOrNull()
+            val lng = prefs.getString("last_lng", null)?.toDoubleOrNull()
+            if (lat != null && lng != null) {
+                val loc = LatLng(lat, lng)
+                _currentLocation.value = loc
+                return loc
+            }
+        } catch (_: Exception) {}
+
+        try {
+            val locMgr = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            val providers = locMgr?.getProviders(true) ?: emptyList()
+            for (p in providers) {
+                @SuppressLint("MissingPermission")
+                val l = locMgr?.getLastKnownLocation(p)
+                if (l != null) {
+                    val loc = LatLng(l.latitude, l.longitude)
+                    _currentLocation.value = loc
+                    return loc
+                }
+            }
+        } catch (_: Exception) {}
+
+        val defaultLoc = LatLng(10.7769, 106.7009) // TP. Hồ Chí Minh
+        _currentLocation.value = defaultLoc
+        return defaultLoc
     }
 
     private fun initTts() {
@@ -159,6 +212,15 @@ class NavigationEngine(
         _currentLocation.value = latLng
         _currentSpeedKmh.value = speedKmh
         _currentHeading.value = heading
+
+        // Lưu vết vị trí cuối cùng để khôi phục ngay khi mở app
+        try {
+            context.getSharedPreferences("nav_engine_prefs", Context.MODE_PRIVATE)
+                .edit()
+                .putString("last_lat", latLng.latitude.toString())
+                .putString("last_lng", latLng.longitude.toString())
+                .apply()
+        } catch (_: Exception) {}
 
         if (_isNavigating.value && _activeRoute.value != null) {
             processNavigationProgress(latLng, speedKmh)
@@ -385,17 +447,15 @@ class NavigationEngine(
         intermediateStops: List<LatLng> = emptyList(),
         destination: LatLng,
         destinationTitle: String = "Điểm đến",
-        autoStart: Boolean = true
+        autoStart: Boolean = false
     ) {
-        val start = origin ?: _currentLocation.value
-        if (start == null) {
-            return
-        }
+        val start = origin ?: getEffectiveLocation()
 
         this.destinationCoordinate = destination
         this.intermediateStops = intermediateStops
         _destinationTitle.value = destinationTitle
         _isCalculatingRoute.value = true
+        _routeErrorMessage.value = null
         _alternativeRoutes.value = emptyList()
         _allCalculatedRoutes.value = emptyList()
 
@@ -411,6 +471,8 @@ class NavigationEngine(
                 _isCalculatingRoute.value = false
                 if (finalRoutes.isNotEmpty()) {
                     applyCalculatedRoutes(finalRoutes, autoStart)
+                } else {
+                    _routeErrorMessage.value = "Không thể tìm thấy lộ trình đến '$destinationTitle'. Vui lòng kiểm tra lại kết nối mạng."
                 }
             }
         }
