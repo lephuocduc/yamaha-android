@@ -27,4 +27,20 @@ interface TripDao {
 @Database(entities = [TripRecord::class], version = 1, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun tripDao(): TripDao
+
+    companion object {
+        @Volatile
+        private var instance: AppDatabase? = null
+
+        fun getInstance(context: Context): AppDatabase {
+            return instance ?: synchronized(this) {
+                instance ?: androidx.room.Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "nconnect_database.db"
+                ).fallbackToDestructiveMigration().build().also { instance = it }
+            }
+        }
+    }
 }
+
