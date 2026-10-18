@@ -26,6 +26,7 @@ class OSMTileEngine private constructor(context: Context) {
 
     companion object {
         const val DEFAULT_CARTO_API_KEY = "cb1_4mz7_1_fb3f57cfec3a69a35eb8be87"
+        const val defaultCartoApiKey = DEFAULT_CARTO_API_KEY
         const val DEFAULT_TILE_URL_TEMPLATE =
             "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=$DEFAULT_CARTO_API_KEY"
 

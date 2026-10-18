@@ -1,7 +1,9 @@
 package vn.tftlink.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,13 +12,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -36,17 +39,14 @@ import vn.tftlink.service.protocol.StreetCrossProtocol
 import vn.tftlink.service.renderer.OSMTileEngine
 import vn.tftlink.ui.MainViewModel
 import vn.tftlink.ui.theme.DarkBackground
-import vn.tftlink.ui.theme.DarkSurface
 import vn.tftlink.ui.theme.DarkSurfaceBorder
 import vn.tftlink.ui.theme.DarkSurfaceCard
 import vn.tftlink.ui.theme.NeonGreen
-import vn.tftlink.ui.theme.NeonOrange
 import vn.tftlink.ui.theme.TextMuted
 import vn.tftlink.ui.theme.TextPrimary
 import vn.tftlink.ui.theme.TextSecondary
 import vn.tftlink.ui.theme.YamahaCyan
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(viewModel: MainViewModel) {
     val connectionState by viewModel.connectionState.collectAsState()
@@ -112,19 +112,20 @@ fun SettingsScreen(viewModel: MainViewModel) {
                     Text("DÒNG XE YAMAHA", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    ExposedDropdownMenuBox(
-                        expanded = bikeMenuExpanded,
-                        onExpandedChange = { bikeMenuExpanded = !bikeMenuExpanded }
-                    ) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
                             value = selectedBikeModel,
                             onValueChange = {},
                             readOnly = true,
                             label = { Text("Mẫu xe đang dùng") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = bikeMenuExpanded) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                            trailingIcon = {
+                                IconButton(onClick = { bikeMenuExpanded = !bikeMenuExpanded }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().clickable { bikeMenuExpanded = true }
                         )
-                        ExposedDropdownMenu(
+                        DropdownMenu(
                             expanded = bikeMenuExpanded,
                             onDismissRequest = { bikeMenuExpanded = false }
                         ) {
@@ -172,19 +173,20 @@ fun SettingsScreen(viewModel: MainViewModel) {
                     Text("BẢN ĐỒ & THUẬT TOÁN DẪN ĐƯỜNG", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    ExposedDropdownMenuBox(
-                        expanded = styleMenuExpanded,
-                        onExpandedChange = { styleMenuExpanded = !styleMenuExpanded }
-                    ) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
                             value = selectedStyle,
                             onValueChange = {},
                             readOnly = true,
                             label = { Text("Giao diện ngói bản đồ") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = styleMenuExpanded) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                            trailingIcon = {
+                                IconButton(onClick = { styleMenuExpanded = !styleMenuExpanded }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().clickable { styleMenuExpanded = true }
                         )
-                        ExposedDropdownMenu(
+                        DropdownMenu(
                             expanded = styleMenuExpanded,
                             onDismissRequest = { styleMenuExpanded = false }
                         ) {
