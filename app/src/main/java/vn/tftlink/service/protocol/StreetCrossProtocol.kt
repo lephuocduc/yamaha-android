@@ -243,24 +243,19 @@ object NaviLite {
      */
     fun frame(ft: Byte, svc: Byte, pdt: Byte, payload: ByteArray): ByteArray {
         val size = payload.size
-        val h = ByteArray(9)
-        h[0] = 0x6e // 'n'
-        h[1] = 0x41 // 'A'
-        h[2] = 0x6c // 'l'
-        h[3] = 0x40 // '@'
-        h[4] = 1    // version 1
-        h[5] = ft   // frameType (e.g. 6 = PHONE)
-        h[6] = svc  // serviceType
-        h[7] = (size and 0xFF).toByte()
-        h[8] = ((size shr 8) and 0xFF).toByte()
-
-        // Full header 13 bytes for CRC calculation: magic(4) + ver(1) + ft(1) + svc(1) + size(4) + pdt(1)
-        val header = ByteArray(13)
-        System.arraycopy(h, 0, header, 0, 7)
-        val sizeBuf = ByteBuffer.wrap(header, 7, 4).order(ByteOrder.LITTLE_ENDIAN)
-        sizeBuf.putInt(size)
-        header[11] = ((size shr 24) and 0xFF).toByte() // just in case
-        header[12] = pdt // payloadDataType (0 = VALUE, 1 = POINTER)
+        val header = ByteArray(12)
+        header[0] = 0x6e // 'n'
+        header[1] = 0x41 // 'A'
+        header[2] = 0x6c // 'l'
+        header[3] = 0x40 // '@'
+        header[4] = 1    // version 1
+        header[5] = ft   // frameType (e.g. 6 = PHONE)
+        header[6] = svc  // serviceType
+        header[7] = (size and 0xFF).toByte()
+        header[8] = ((size shr 8) and 0xFF).toByte()
+        header[9] = ((size shr 16) and 0xFF).toByte()
+        header[10] = ((size shr 24) and 0xFF).toByte()
+        header[11] = pdt // payloadDataType (0 = VALUE, 1 = POINTER)
 
         val fullForCrc = ByteArray(header.size + payload.size)
         System.arraycopy(header, 0, fullForCrc, 0, header.size)

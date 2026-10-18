@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import vn.tftlink.data.model.bike.BikeConnectionState
 import vn.tftlink.data.model.bike.BikeDevice
 import vn.tftlink.data.model.bike.BikeTelemetry
@@ -417,13 +418,20 @@ class YamahaCCUManager(
             }
         }
 
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray
+        ) {
+            handleIncomingGattData(characteristic.uuid, value)
+        }
+
         @Deprecated("Deprecated in Java")
         override fun onCharacteristicChanged(
-            gatt: BluetoothGatt?,
-            characteristic: BluetoothGattCharacteristic?
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic
         ) {
-            val data = characteristic?.value ?: return
-            handleIncomingGattData(characteristic.uuid, data)
+            characteristic.value?.let { handleIncomingGattData(characteristic.uuid, it) }
         }
     }
 
@@ -748,7 +756,7 @@ class YamahaCCUManager(
         val distVal = if (distanceMeters >= 1000.0) (distanceMeters / 1000.0).toFloat() else distanceMeters.toFloat()
         val unitBytes = unitStr.toByteArray(Charsets.UTF_8)
 
-        val s4Buf = ByteBuffer.allocate(6 + unitBytes.size + roadBytes.size).order(ByteOrder.LITTLE_ENDIAN)
+        val s4Buf = ByteBuffer.allocate(7 + unitBytes.size + roadBytes.size).order(ByteOrder.LITTLE_ENDIAN)
         val iconByte = if (maneuverIcon == 0) 1 else maneuverIcon
         s4Buf.put(iconByte.toByte())
         s4Buf.putFloat(distVal)
@@ -768,7 +776,7 @@ class YamahaCCUManager(
         writeWireData(NaviLite.frame(6, 14, 1, roadPayload))
 
         // 5. Service 2 (PDT 1): Giờ đến ETA trong ngày
-        val calendar = Calendar.currentOrNew()
+        val calendar = Calendar.getInstance()
         val currentMinuteOfDay = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
         val etaMin = minOf(1439, currentMinuteOfDay)
         val arrivePayload = byteArrayOf(0x03, (etaMin and 0xFF).toByte(), ((etaMin shr 8) and 0xFF).toByte(), 0x00)
@@ -878,5 +886,3 @@ class YamahaCCUManager(
         return clean.filter { it.code in 32..126 }.trim()
     }
 }
-
-private fun Calendar.Companion.currentOrNew(): Calendar = Calendar.getInstance()
