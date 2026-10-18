@@ -3,9 +3,7 @@ package vn.tftlink.ui
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
-import android.content.SharedPreferences
 import android.graphics.Bitmap
-import android.location.Location
 import android.os.Looper
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,42 +14,47 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.model.LatLng
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import vn.tftlink.data.local.AppDatabase
 import vn.tftlink.data.model.bike.BikeConnectionState
 import vn.tftlink.data.model.bike.BikeDevice
 import vn.tftlink.data.model.bike.BikeTelemetry
 import vn.tftlink.data.model.location.ParkedBikeLocation
 import vn.tftlink.data.model.location.SavedPlace
-import vn.tftlink.data.model.nav.NavigationDirection
 import vn.tftlink.data.model.nav.NavigationInstruction
 import vn.tftlink.data.model.nav.OSMRoute
 import vn.tftlink.data.model.trip.TripRecord
+import vn.tftlink.service.BikeForegroundService
 import vn.tftlink.service.ble.YamahaCCUManager
+import vn.tftlink.service.nav.NavigationEngine
+import vn.tftlink.service.nav.ParkingLocationManager
+import vn.tftlink.service.nav.SavedPlacesManager
 import vn.tftlink.service.renderer.TFTStreamRenderer
+import vn.tftlink.service.trip.TripHistoryManager
 import vn.tftlink.service.update.AppUpdateInfo
 import vn.tftlink.service.update.AppUpdateManager
 import vn.tftlink.service.update.UpdateStatus
-import vn.tftlink.util.GeoUtils
 import java.io.File
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val prefs: SharedPreferences = application.getSharedPreferences("nconnect_prefs", Context.MODE_PRIVATE)
-    private val gson = Gson()
-    private val tripDao = AppDatabase.getInstance(application).tripDao()
-
-    // CCU & Renderer
+    // 1. Core Hardware & BLE CCU Manager
     val ccuManager = YamahaCCUManager.getInstance(application, viewModelScope)
     val streamRenderer = TFTStreamRenderer(application, viewModelScope)
+
+    // 2. Navigation & Map Services
+    val navEngine = NavigationEngine.getInstance(application, viewModelScope)
+    val parkingManager = ParkingLocationManager.getInstance(application, viewModelScope)
+    val savedPlacesManager = SavedPlacesManager.getInstance(application)
+
+    // 3. Trip History Manager
+    val tripManager = TripHistoryManager.getInstance(application, viewModelScope)
+
+    // 4. In-App Software Updater
+    val updateManager = AppUpdateManager.getInstance(application, viewModelScope)
+    val updateStatus: StateFlow<UpdateStatus> = updateManager.status
 
     // State flows from CCU
     val connectionState: StateFlow<BikeConnectionState> = ccuManager.state
@@ -63,166 +66,150 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // TFT Mirror Bitmap
     val lastFrameBitmap: StateFlow<Bitmap?> = streamRenderer.lastFrameBitmap
-
     private val _isStreaming = MutableStateFlow(false)
     val isStreaming: StateFlow<Boolean> = _isStreaming.asStateFlow()
 
     private val _zoomDescription = MutableStateFlow("ZOOM: 200m (OSM 18)")
     val zoomDescription: StateFlow<String> = _zoomDescription.asStateFlow()
 
-    // GPS & Location tracking
-    private val fusedLocationClient: FusedLocationProviderClient =
-        LocationServices.getFusedLocationProviderClient(application)
-    private val _currentLocation = MutableStateFlow<LatLng?>(null)
-    val currentLocation: StateFlow<LatLng?> = _currentLocation.asStateFlow()
-
-    private val _currentHeading = MutableStateFlow(0f)
-    val currentHeading: StateFlow<Float> = _currentHeading.asStateFlow()
-
-    private val _currentSpeedKmh = MutableStateFlow(0.0)
-    val currentSpeedKmh: StateFlow<Double> = _currentSpeedKmh.asStateFlow()
-
-    // Navigation State
-    private val _isNavigating = MutableStateFlow(false)
-    val isNavigating: StateFlow<Boolean> = _isNavigating.asStateFlow()
-
-    private val _activeRoute = MutableStateFlow<OSMRoute?>(null)
-    val activeRoute: StateFlow<OSMRoute?> = _activeRoute.asStateFlow()
-
-    private val _currentInstruction = MutableStateFlow(NavigationInstruction())
-    val currentInstruction: StateFlow<NavigationInstruction> = _currentInstruction.asStateFlow()
-
-    private val _arrivalMessage = MutableStateFlow<String?>(null)
-    val arrivalMessage: StateFlow<String?> = _arrivalMessage.asStateFlow()
+    // GPS & Navigation State Flows
+    val currentLocation: StateFlow<LatLng?> = navEngine.currentLocation
+    val currentHeading: StateFlow<Float> = navEngine.currentHeading
+    val currentSpeedKmh: StateFlow<Double> = navEngine.currentSpeedKmh
+    val isNavigating: StateFlow<Boolean> = navEngine.isNavigating
+    val activeRoute: StateFlow<OSMRoute?> = navEngine.activeRoute
+    val alternativeRoutes: StateFlow<List<OSMRoute>> = navEngine.alternativeRoutes
+    val allCalculatedRoutes: StateFlow<List<OSMRoute>> = navEngine.allCalculatedRoutes
+    val currentInstruction: StateFlow<NavigationInstruction> = navEngine.currentInstruction
+    val isCalculatingRoute: StateFlow<Boolean> = navEngine.isCalculatingRoute
+    val isSearching: StateFlow<Boolean> = navEngine.isSearching
+    val searchResults: StateFlow<List<SavedPlace>> = navEngine.searchResults
+    val nearbyGasStations: StateFlow<List<SavedPlace>> = navEngine.nearbyGasStations
+    val arrivalMessage: StateFlow<String?> = navEngine.arrivalMessage
+    val isRerouting: StateFlow<Boolean> = navEngine.isRerouting
+    val destinationTitle: StateFlow<String> = navEngine.destinationTitle
 
     private val _isNorthUp = MutableStateFlow(false)
     val isNorthUp: StateFlow<Boolean> = _isNorthUp.asStateFlow()
 
     // Parking Location (Find My Bike)
-    private val _parkedLocation = MutableStateFlow<ParkedBikeLocation?>(null)
-    val parkedLocation: StateFlow<ParkedBikeLocation?> = _parkedLocation.asStateFlow()
+    val parkedLocation: StateFlow<ParkedBikeLocation?> = parkingManager.lastParkedLocation
 
     // Saved Places
-    private val _homePlace = MutableStateFlow<SavedPlace?>(null)
-    val homePlace: StateFlow<SavedPlace?> = _homePlace.asStateFlow()
-
-    private val _workPlace = MutableStateFlow<SavedPlace?>(null)
-    val workPlace: StateFlow<SavedPlace?> = _workPlace.asStateFlow()
-
-    private val _favoritePlaces = MutableStateFlow<List<SavedPlace>>(emptyList())
-    val favoritePlaces: StateFlow<List<SavedPlace>> = _favoritePlaces.asStateFlow()
+    val homePlace: StateFlow<SavedPlace?> = savedPlacesManager.homePlace
+    val workPlace: StateFlow<SavedPlace?> = savedPlacesManager.workPlace
+    val favoritePlaces: StateFlow<List<SavedPlace>> = savedPlacesManager.favoritePlaces
 
     // Trip History from Room Database
-    val tripHistory: StateFlow<List<TripRecord>> = tripDao.getAllTrips()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val tripHistory: StateFlow<List<TripRecord>> = tripManager.allTrips
+    val isRecordingSession: StateFlow<Boolean> = tripManager.isRecordingSession
+    val sessionDistanceMeters: StateFlow<Double> = tripManager.sessionDistanceMeters
+    val sessionDurationSeconds: StateFlow<Long> = tripManager.sessionDurationSeconds
 
-    // Live Recording Session
-    private val _isRecordingSession = MutableStateFlow(false)
-    val isRecordingSession: StateFlow<Boolean> = _isRecordingSession.asStateFlow()
-
-    private val _sessionDistanceMeters = MutableStateFlow(0.0)
-    val sessionDistanceMeters: StateFlow<Double> = _sessionDistanceMeters.asStateFlow()
-
-    private val _sessionDurationSeconds = MutableStateFlow(0L)
-    val sessionDurationSeconds: StateFlow<Long> = _sessionDurationSeconds.asStateFlow()
-
-    // Location callback
+    // Fused Location Client for foreground UI updates
+    private val fusedLocationClient: FusedLocationProviderClient =
+        LocationServices.getFusedLocationProviderClient(application)
     private var locationCallback: LocationCallback? = null
 
     init {
-        loadPersistedPlaces()
-        loadPersistedParking()
+        // Link cross-service references
+        navEngine.ccuManager = ccuManager
+        navEngine.streamRenderer = streamRenderer
+
         setupCCUCallbacks()
         startLocationUpdates()
         updateZoomText()
+
+        // Khởi động foreground service duy trì kết nối nền
+        try {
+            BikeForegroundService.start(application)
+        } catch (_: Exception) {}
     }
 
     private fun setupCCUCallbacks() {
-        ccuManager.onZoomIn = {
-            zoomIn()
+        ccuManager.onZoomIn = { zoomIn() }
+        ccuManager.onZoomOut = { zoomOut() }
+        ccuManager.onStopRoute = { stopNavigation() }
+        ccuManager.onGoHome = { navigateToHome() }
+        ccuManager.onGoToWork = { navigateToWork() }
+        ccuManager.onFindGasStation = { navEngine.fetchNearbyGasStations() }
+        ccuManager.onBikeConnected = {
+            ccuManager.log("Đã kết nối xe máy Yamaha - Bắt đầu truyền luồng màn hình")
         }
-        ccuManager.onZoomOut = {
-            zoomOut()
-        }
-        ccuManager.onStopRoute = {
-            stopNavigation()
-        }
-        ccuManager.onGoHome = {
-            homePlace.value?.let { startNavigationTo(it.coordinate, it.name) }
-        }
-        ccuManager.onGoToWork = {
-            workPlace.value?.let { startNavigationTo(it.coordinate, it.name) }
+        ccuManager.onBikeDisconnected = {
+            val loc = navEngine.currentLocation.value
+            val bikeName = connectedBike.value?.name ?: "Yamaha NMAX"
+            if (loc != null) {
+                parkingManager.recordParkingLocation(loc, bikeName)
+                tripManager.endTripSession(loc)
+            }
         }
     }
 
     @SuppressLint("MissingPermission")
     fun startLocationUpdates() {
-        try {
-            val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000)
-                .setMinUpdateIntervalMillis(500)
-                .setMinUpdateDistanceMeters(1f)
-                .build()
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
+            .setMinUpdateIntervalMillis(500L)
+            .setMinUpdateDistanceMeters(1f)
+            .build()
 
-            locationCallback = object : LocationCallback() {
-                override fun onLocationResult(result: LocationResult) {
-                    val loc = result.lastLocation ?: return
-                    val latLng = LatLng(loc.latitude, loc.longitude)
-                    _currentLocation.value = latLng
-                    if (loc.hasBearing()) {
-                        _currentHeading.value = loc.bearing
-                    }
-                    if (loc.hasSpeed()) {
-                        _currentSpeedKmh.value = loc.speed * 3.6
-                    }
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                val loc = result.lastLocation ?: return
+                val latLng = LatLng(loc.latitude, loc.longitude)
+                val speedKmh = loc.speed * 3.6
 
-                    // Nếu đang trong chế độ preview/stream
-                    if (_isStreaming.value) {
-                        viewModelScope.launch(Dispatchers.Default) {
-                            streamRenderer.renderLiveMapFrame(
-                                location = latLng,
-                                course = _currentHeading.value,
-                                activeRoute = _activeRoute.value,
-                                instruction = _currentInstruction.value,
-                                speedKmh = _currentSpeedKmh.value
-                            )
-                        }
-                    }
-                }
+                navEngine.updateLocation(latLng, speedKmh, loc.bearing)
+                streamRenderer.updateLocation(latLng, loc.bearing)
+                tripManager.updateLocation(latLng, speedKmh)
             }
-
-            fusedLocationClient.requestLocationUpdates(
-                req,
-                locationCallback as LocationCallback,
-                Looper.getMainLooper()
-            )
-
-            fusedLocationClient.lastLocation.addOnSuccessListener { loc: Location? ->
-                if (loc != null) {
-                    _currentLocation.value = LatLng(loc.latitude, loc.longitude)
-                    if (loc.hasBearing()) _currentHeading.value = loc.bearing
-                    if (loc.hasSpeed()) _currentSpeedKmh.value = loc.speed * 3.6
-                }
-            }
-        } catch (_: Exception) {
-            // Permission might be requested later
         }
+
+        try {
+            fusedLocationClient.requestLocationUpdates(request, locationCallback!!, Looper.getMainLooper())
+        } catch (_: SecurityException) {}
     }
 
-    fun startScanning() {
+    // =========================================================================
+    // CCU & BLUETOOTH ACTIONS
+    // =========================================================================
+
+    fun startScan() {
         ccuManager.startScanning()
     }
 
-    fun stopScanning() {
+    fun startScanning() = startScan()
+
+    fun stopScan() {
         ccuManager.stopScanning()
     }
 
-    fun connectBike(bike: BikeDevice) {
-        ccuManager.connect(bike)
+    fun stopScanning() = stopScan()
+
+    fun connectBike(device: BikeDevice) {
+        ccuManager.connect(device)
     }
 
-    fun disconnect() {
-        stopStreaming()
+    fun disconnectBike() {
         ccuManager.disconnect()
+    }
+
+    fun disconnect() = disconnectBike()
+
+    // =========================================================================
+    // TFT STREAM RENDERER ACTIONS
+    // =========================================================================
+
+    fun startStreaming() {
+        streamRenderer.startStreamingLoop()
+        ccuManager.startStreaming()
+        _isStreaming.value = true
+    }
+
+    fun stopStreaming() {
+        streamRenderer.stopStreamingLoop()
+        ccuManager.stopStreaming()
+        _isStreaming.value = false
     }
 
     fun toggleStreaming() {
@@ -233,183 +220,171 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun startStreaming() {
-        _isStreaming.value = true
-        ccuManager.startStreaming()
-        streamRenderer.startStreamingLoop(
-            getLocation = { _currentLocation.value ?: LatLng(10.7769, 106.7009) },
-            getCourse = { _currentHeading.value },
-            getActiveRoute = { _activeRoute.value },
-            getAlternativeRoutes = { emptyList() },
-            getInstruction = { _currentInstruction.value },
-            getSpeed = { _currentSpeedKmh.value },
-            getIsRerouting = { false },
-            onFrameReady = { jpegBytes ->
-                ccuManager.sendLiveMapFrameToTFT(jpegBytes)
-            }
-        )
-    }
-
-    fun stopStreaming() {
-        _isStreaming.value = false
-        streamRenderer.stopStreamingLoop()
-        ccuManager.stopStreaming()
-    }
-
     fun zoomIn() {
-        streamRenderer.zoomIn { jpegBytes ->
-            if (_isStreaming.value) {
-                ccuManager.sendLiveMapFrameToTFT(jpegBytes)
-            }
-        }
+        streamRenderer.zoomIn()
         updateZoomText()
     }
 
     fun zoomOut() {
-        streamRenderer.zoomOut { jpegBytes ->
-            if (_isStreaming.value) {
-                ccuManager.sendLiveMapFrameToTFT(jpegBytes)
-            }
-        }
+        streamRenderer.zoomOut()
         updateZoomText()
     }
 
-    fun toggleNorthUp() {
-        _isNorthUp.value = !_isNorthUp.value
-        streamRenderer.isNorthUp = _isNorthUp.value
-    }
-
     private fun updateZoomText() {
-        val dist = TFTStreamRenderer.ZOOM_LEVELS.getOrNull(streamRenderer.currentZoomIndex) ?: 200.0
-        val osmZoom = streamRenderer.currentOsmZoom
-        _zoomDescription.value = "ZOOM: ${dist.toInt()}m (OSM $osmZoom)"
+        val zoom = streamRenderer.currentZoomLevel
+        _zoomDescription.value = when (zoom) {
+            19 -> "ZOOM: 100m (OSM 19 - Cận cảnh ngã tư)"
+            18 -> "ZOOM: 200m (OSM 18 - Chuẩn dẫn đường)"
+            17 -> "ZOOM: 400m (OSM 17 - Toàn cảnh khu vực)"
+            16 -> "ZOOM: 800m (OSM 16 - Tuyến đường dài)"
+            else -> "ZOOM: ${zoom}"
+        }
     }
 
-    // Navigation triggers
-    fun startNavigationTo(dest: LatLng, title: String) {
-        val start = _currentLocation.value ?: LatLng(10.7769, 106.7009)
-        val dist = GeoUtils.computeDistanceMeters(start, dest)
-        val etaSecs = (dist / 11.1).toInt() // ~40km/h avg speed
+    // =========================================================================
+    // NAVIGATION & ROUTING ACTIONS
+    // =========================================================================
 
-        val route = OSMRoute(
-            coordinates = listOf(start, LatLng((start.latitude + dest.latitude)/2, (start.longitude + dest.longitude)/2), dest),
-            distanceMeters = dist,
-            durationSeconds = etaSecs.toDouble()
-        )
-        _activeRoute.value = route
-        _currentInstruction.value = NavigationInstruction(
-            detailedInstruction = "Đi thẳng hướng $title",
-            nextRoadName = title,
-            currentRoadName = title,
-            distanceMeters = dist.toInt(),
-            direction = NavigationDirection.STRAIGHT,
-            totalTimeRemainingSeconds = etaSecs
-        )
-        _isNavigating.value = true
+    fun searchPlaces(query: String) {
+        navEngine.searchPlaces(query)
+    }
 
-        ccuManager.updateCurrentRoadNameOnTFT(
-            rawRoadName = title,
-            distanceMeters = dist,
-            maneuverIcon = NavigationDirection.STRAIGHT.rawValue,
-            etaText = "${etaSecs / 60}P"
-        )
+    fun reverseGeocode(latLng: LatLng, onResult: (title: String, address: String) -> Unit) {
+        navEngine.reverseGeocode(latLng, onResult)
+    }
 
-        if (!_isStreaming.value) {
-            startStreaming()
+    fun fetchNearbyGasStations() {
+        navEngine.fetchNearbyGasStations()
+    }
+
+    fun calculateRoute(
+        destination: LatLng,
+        destinationTitle: String = "Điểm đến",
+        autoStart: Boolean = true
+    ) {
+        navEngine.calculateRoute(
+            origin = navEngine.currentLocation.value,
+            destination = destination,
+            destinationTitle = destinationTitle,
+            autoStart = autoStart
+        )
+    }
+
+    fun calculateRouteWithStops(
+        origin: LatLng? = null,
+        intermediateStops: List<LatLng> = emptyList(),
+        destination: LatLng,
+        destinationTitle: String = "Điểm đến",
+        autoStart: Boolean = true
+    ) {
+        navEngine.calculateRoute(
+            origin = origin ?: navEngine.currentLocation.value,
+            intermediateStops = intermediateStops,
+            destination = destination,
+            destinationTitle = destinationTitle,
+            autoStart = autoStart
+        )
+    }
+
+    fun selectRoute(route: OSMRoute) {
+        navEngine.selectRoute(route)
+    }
+
+    fun startNavigation() {
+        navEngine.startActiveNavigation()
+        val loc = navEngine.currentLocation.value
+        if (loc != null) {
+            tripManager.startTripSession(loc, connectedBike.value?.name ?: "Yamaha NMAX")
         }
     }
 
     fun stopNavigation() {
-        _isNavigating.value = false
-        _activeRoute.value = null
-        _currentInstruction.value = NavigationInstruction()
+        navEngine.stopNavigation()
         ccuManager.stopNavigationOnTFT()
     }
 
-    fun clearArrivalMessage() {
-        _arrivalMessage.value = null
+    fun toggleNorthUp() {
+        _isNorthUp.value = !_isNorthUp.value
     }
 
-    // Parking Location
-    fun recordParkingLocation(coord: LatLng, bikeName: String = "Yamaha NMAX", address: String = "") {
-        val parking = ParkedBikeLocation(
-            latitude = coord.latitude,
-            longitude = coord.longitude,
-            bikeName = bikeName,
-            address = address
-        )
-        _parkedLocation.value = parking
-        prefs.edit().putString("parked_location_json", gson.toJson(parking)).apply()
+    fun startNavigationTo(destination: LatLng, title: String = "Điểm đến") {
+        calculateRoute(destination, title, autoStart = true)
+    }
+
+    fun clearArrivalMessage() {
+        stopNavigation()
+    }
+
+    fun navigateToHome() {
+        savedPlacesManager.homePlace.value?.let { home ->
+            calculateRoute(home.coordinate, home.name, autoStart = true)
+        }
+    }
+
+    fun navigateToWork() {
+        savedPlacesManager.workPlace.value?.let { work ->
+            calculateRoute(work.coordinate, work.name, autoStart = true)
+        }
+    }
+
+    // =========================================================================
+    // PARKING (FIND MY BIKE) ACTIONS
+    // =========================================================================
+
+    fun recordParkingLocation(coord: LatLng, bikeName: String = "Yamaha NMAX", address: String? = null) {
+        parkingManager.recordParkingLocation(coord, bikeName, explicitAddress = address)
     }
 
     fun clearParkingLocation() {
-        _parkedLocation.value = null
-        prefs.edit().remove("parked_location_json").apply()
+        parkingManager.clearParkingLocation()
     }
 
-    private fun loadPersistedParking() {
-        val json = prefs.getString("parked_location_json", null)
-        if (!json.isNullOrEmpty()) {
-            try {
-                _parkedLocation.value = gson.fromJson(json, ParkedBikeLocation::class.java)
-            } catch (_: Exception) {}
-        }
+    fun openGoogleMapsWalking(context: Context) {
+        parkingManager.openGoogleMapsWalking(context)
     }
 
-    // Saved Places
+    // =========================================================================
+    // SAVED PLACES ACTIONS
+    // =========================================================================
+
+    fun setHomePlace(name: String, address: String, coord: LatLng) {
+        savedPlacesManager.setHome(name, address, coord)
+    }
+
     fun setHomePlace(place: SavedPlace) {
-        _homePlace.value = place
-        prefs.edit().putString("home_place_json", gson.toJson(place)).apply()
+        savedPlacesManager.setHome(place.name, place.address, place.coordinate)
+    }
+
+    fun removeHomePlace() {
+        savedPlacesManager.removeHome()
+    }
+
+    fun setWorkPlace(name: String, address: String, coord: LatLng) {
+        savedPlacesManager.setWork(name, address, coord)
     }
 
     fun setWorkPlace(place: SavedPlace) {
-        _workPlace.value = place
-        prefs.edit().putString("work_place_json", gson.toJson(place)).apply()
+        savedPlacesManager.setWork(place.name, place.address, place.coordinate)
+    }
+
+    fun removeWorkPlace() {
+        savedPlacesManager.removeWork()
     }
 
     fun addFavoritePlace(place: SavedPlace) {
-        val list = _favoritePlaces.value.toMutableList()
-        list.add(place)
-        _favoritePlaces.value = list
-        prefs.edit().putString("fav_places_json", gson.toJson(list)).apply()
+        savedPlacesManager.addFavorite(place)
     }
 
     fun removeFavoritePlace(id: String) {
-        val list = _favoritePlaces.value.filter { it.id != id }
-        _favoritePlaces.value = list
-        prefs.edit().putString("fav_places_json", gson.toJson(list)).apply()
+        savedPlacesManager.removeFavorite(id)
     }
 
-    private fun loadPersistedPlaces() {
-        prefs.getString("home_place_json", null)?.let {
-            try { _homePlace.value = gson.fromJson(it, SavedPlace::class.java) } catch (_: Exception) {}
-        }
-        prefs.getString("work_place_json", null)?.let {
-            try { _workPlace.value = gson.fromJson(it, SavedPlace::class.java) } catch (_: Exception) {}
-        }
-        prefs.getString("fav_places_json", null)?.let {
-            try {
-                val type = object : TypeToken<List<SavedPlace>>() {}.type
-                _favoritePlaces.value = gson.fromJson(it, type)
-            } catch (_: Exception) {}
-        }
-    }
-
-    // Trip actions
-    fun deleteTrip(id: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            tripDao.deleteTrip(id)
-        }
-    }
-
-    fun clearAllTrips() {
-        viewModelScope.launch(Dispatchers.IO) {
-            tripDao.clearAllTrips()
-        }
-    }
+    // =========================================================================
+    // TRIP HISTORY ACTIONS
+    // =========================================================================
 
     fun addSampleTrip() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val now = System.currentTimeMillis()
             val sample = TripRecord(
                 startTime = now - 1800000,
@@ -427,13 +402,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 parkingTimestamp = now,
                 bikeName = connectedBike.value?.name ?: "Yamaha NMAX"
             )
-            tripDao.insertTrip(sample)
+            tripManager.insertTrip(sample)
         }
     }
 
-    // In-App Software Updater
-    val updateManager = AppUpdateManager.getInstance(getApplication(), viewModelScope)
-    val updateStatus: StateFlow<UpdateStatus> = updateManager.status
+    fun deleteTrip(id: String) {
+        tripManager.deleteTrip(id)
+    }
+
+    fun clearAllTrips() {
+        tripManager.clearAllTrips()
+    }
+
+    // =========================================================================
+    // IN-APP SOFTWARE UPDATER
+    // =========================================================================
 
     fun checkForUpdate(silentIfUpToDate: Boolean = false) {
         updateManager.checkForUpdate(silentIfUpToDate)

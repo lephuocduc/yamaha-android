@@ -2,6 +2,10 @@ package vn.tftlink.ui.screens
 
 import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -19,26 +23,44 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Directions
+import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocalGasStation
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.TurnLeft
+import androidx.compose.material.icons.filled.TurnRight
+import androidx.compose.material.icons.filled.TurnSlightLeft
+import androidx.compose.material.icons.filled.TurnSlightRight
+import androidx.compose.material.icons.filled.UturnLeft
+import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -47,12 +69,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,44 +89,61 @@ import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
+import kotlinx.coroutines.launch
+import vn.tftlink.data.model.location.SavedPlace
+import vn.tftlink.data.model.nav.NavigationDirection
+import vn.tftlink.data.model.nav.OSMRoute
 import vn.tftlink.ui.MainViewModel
 import vn.tftlink.ui.theme.DarkBackground
 import vn.tftlink.ui.theme.DarkSurface
 import vn.tftlink.ui.theme.DarkSurfaceBorder
 import vn.tftlink.ui.theme.DarkSurfaceCard
+import vn.tftlink.ui.theme.DarkSurfaceHighlight
 import vn.tftlink.ui.theme.NeonGreen
 import vn.tftlink.ui.theme.NeonOrange
-import vn.tftlink.ui.theme.NeonPurple
 import vn.tftlink.ui.theme.NeonRed
 import vn.tftlink.ui.theme.TextMuted
 import vn.tftlink.ui.theme.TextPrimary
 import vn.tftlink.ui.theme.TextSecondary
 import vn.tftlink.ui.theme.YamahaCyan
 
+@OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("MissingPermission")
 @Composable
 fun LiveNavigationScreen(viewModel: MainViewModel) {
     val currentLoc by viewModel.currentLocation.collectAsState()
     val heading by viewModel.currentHeading.collectAsState()
+    val speedKmh by viewModel.currentSpeedKmh.collectAsState()
     val isNavigating by viewModel.isNavigating.collectAsState()
     val activeRoute by viewModel.activeRoute.collectAsState()
+    val alternativeRoutes by viewModel.alternativeRoutes.collectAsState()
     val instruction by viewModel.currentInstruction.collectAsState()
     val isNorthUp by viewModel.isNorthUp.collectAsState()
     val lastFrameBitmap by viewModel.lastFrameBitmap.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
-    val currentRoad by viewModel.currentRoadNameOnTFT.collectAsState()
     val parkedLoc by viewModel.parkedLocation.collectAsState()
+    val arrivalMsg by viewModel.arrivalMessage.collectAsState()
+    val isCalculatingRoute by viewModel.isCalculatingRoute.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
+    val homePlace by viewModel.homePlace.collectAsState()
+    val workPlace by viewModel.workPlace.collectAsState()
+    val destinationTitle by viewModel.destinationTitle.collectAsState()
 
     var showMiniPreview by remember { mutableStateOf(true) }
-    var showSearchDialog by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
+    var showSearchSheet by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var droppedPin by remember { mutableStateOf<LatLng?>(null) }
+    var droppedPinTitle by remember { mutableStateOf("Điểm đã ghim") }
+    var droppedPinAddress by remember { mutableStateOf("") }
 
-    val defaultPosition = LatLng(10.7769, 106.7009) // Ho Chi Minh City
+    val coroutineScope = rememberCoroutineScope()
+    val defaultPosition = LatLng(10.7769, 106.7009)
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(currentLoc ?: defaultPosition, 16f)
     }
 
-    // Auto follow user location if available
+    // Auto follow user location
     LaunchedEffect(currentLoc, heading, isNorthUp) {
         val loc = currentLoc ?: return@LaunchedEffect
         val bearing = if (isNorthUp) 0f else heading
@@ -112,17 +151,17 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
             CameraUpdateFactory.newCameraPosition(
                 CameraPosition.Builder()
                     .target(loc)
-                    .zoom(if (isNavigating) 17f else 15.5f)
+                    .zoom(if (isNavigating) 17.5f else 16f)
                     .bearing(bearing)
-                    .tilt(if (isNorthUp) 0f else 45f)
+                    .tilt(if (isNorthUp) 0f else 48f)
                     .build()
             ),
-            800
+            700
         )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 1. Google Maps
+        // 1. Google Maps Map View
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
@@ -134,9 +173,27 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                 compassEnabled = true,
                 myLocationButtonEnabled = false,
                 zoomControlsEnabled = false
-            )
+            ),
+            onMapLongClick = { latLng ->
+                droppedPin = latLng
+                viewModel.reverseGeocode(latLng) { title, address ->
+                    droppedPinTitle = title
+                    droppedPinAddress = address
+                }
+            }
         ) {
-            // Draw Active Route Polyline
+            // Draw Alternative Routes in Dark / Gray Polyline
+            alternativeRoutes.forEach { altRoute ->
+                Polyline(
+                    points = altRoute.coordinates,
+                    color = Color(0xFF64748B),
+                    width = 12f,
+                    clickable = true,
+                    onClick = { viewModel.selectRoute(altRoute) }
+                )
+            }
+
+            // Draw Active Route Polyline in Yamaha Cyan / Neon Green
             activeRoute?.let { route ->
                 if (route.coordinates.isNotEmpty()) {
                     Polyline(
@@ -146,116 +203,183 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     )
                     Marker(
                         state = MarkerState(position = route.coordinates.last()),
-                        title = "Điểm đến",
+                        title = destinationTitle,
                         snippet = instruction.nextRoadName
                     )
                 }
             }
 
-            // Draw Parked Bike Pin if available
+            // Dropped pin marker
+            droppedPin?.let { pin ->
+                Marker(
+                    state = MarkerState(position = pin),
+                    title = droppedPinTitle,
+                    snippet = droppedPinAddress
+                )
+            }
+
+            // Parked Bike marker
             parkedLoc?.let { parked ->
                 Marker(
                     state = MarkerState(position = parked.coordinate),
-                    title = "Vị trí đỗ xe: ${parked.bikeName}",
+                    title = "Vị trí đỗ xe (${parked.bikeName})",
                     snippet = parked.relativeTimeString
                 )
             }
         }
 
-        // 2. Top Banner: Turn-by-Turn or Search Bar
+        // 2. Top Bar: Turn-by-Turn Guidance HUD OR Search Card
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
                 .align(Alignment.TopCenter)
         ) {
-            if (isNavigating) {
-                // Turn-by-Turn Banner
+            // Arrival message banner
+            arrivalMsg?.let { msg ->
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard.copy(alpha = 0.95f)),
-                    border = BorderStroke(1.dp, YamahaCyan),
-                    shape = RoundedCornerShape(16.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B)),
+                    border = BorderStroke(1.5.dp, NeonGreen),
+                    shape = RoundedCornerShape(14.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
+                        modifier = Modifier.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(YamahaCyan.copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Directions,
-                                contentDescription = null,
-                                tint = YamahaCyan,
-                                modifier = Modifier.size(30.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = NeonGreen,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = if (instruction.distanceMeters < 1000) "${instruction.distanceMeters} m" else String.format("%.1f km", instruction.distanceMeters / 1000.0),
-                                    color = NeonGreen,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 18.sp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = instruction.nextRoadName,
-                                    color = TextPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
-                                    maxLines = 1
+                            Text("ĐÃ ĐẾN NƠI!", color = NeonGreen, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                            Text(msg, color = TextPrimary, fontSize = 12.sp)
+                        }
+                        IconButton(onClick = { viewModel.stopNavigation() }) {
+                            Icon(Icons.Default.Close, contentDescription = null, tint = TextSecondary)
+                        }
+                    }
+                }
+            }
+
+            if (isNavigating) {
+                // Active Turn-by-Turn HUD Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard.copy(alpha = 0.96f)),
+                    border = BorderStroke(1.5.dp, YamahaCyan),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Direction Maneuver Icon
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(YamahaCyan.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = getDirectionIcon(instruction.direction),
+                                    contentDescription = null,
+                                    tint = YamahaCyan,
+                                    modifier = Modifier.size(34.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Còn ${instruction.totalTimeRemainingSeconds / 60} phút • Đồng hồ xe đang hiển thị",
-                                color = TextSecondary,
-                                fontSize = 12.sp
-                            )
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = instruction.formattedDistance,
+                                        color = NeonGreen,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 20.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (instruction.nextRoadName.isNotBlank()) instruction.nextRoadName else instruction.detailedInstruction,
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        maxLines = 1
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Đến nơi lúc ${instruction.etaString} (${instruction.remainingTimeFormatted})",
+                                    color = TextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            IconButton(onClick = { viewModel.stopNavigation() }) {
+                                Icon(Icons.Default.Close, contentDescription = "Dừng dẫn đường", tint = NeonRed)
+                            }
                         }
 
-                        IconButton(
-                            onClick = { viewModel.stopNavigation() }
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Bottom status row in HUD
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Dừng dẫn đường",
-                                tint = NeonRed
+                            Text(
+                                text = "🏍 Tốc độ: ${speedKmh.toInt()} km/h",
+                                color = YamahaCyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
                             )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(NeonGreen)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Đang chiếu lên đồng hồ xe",
+                                    color = NeonGreen,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
                 }
             } else {
-                // Quick Search Bar
+                // Top Search Bar (when idle)
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { showSearchDialog = true },
-                    colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard.copy(alpha = 0.9f)),
+                        .clickable { showSearchSheet = true },
+                    colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard.copy(alpha = 0.92f)),
                     border = BorderStroke(1.dp, DarkSurfaceBorder),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(14.dp)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                            .padding(horizontal = 14.dp, vertical = 13.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(Icons.Default.Search, contentDescription = null, tint = YamahaCyan)
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "Tìm kiếm điểm đến trên bản đồ...",
+                            text = "Tìm kiếm địa điểm hoặc chạm để chỉ đường...",
                             color = TextSecondary,
                             fontSize = 14.sp
                         )
@@ -264,14 +388,134 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
             }
         }
 
-        // 3. Floating Action Controls (Right side)
+        // 3. Dropped Pin Action Card
+        droppedPin?.let { pin ->
+            Card(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, bottom = 80.dp)
+                    .fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
+                border = BorderStroke(1.dp, YamahaCyan),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(droppedPinTitle, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        IconButton(onClick = { droppedPin = null }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = null, tint = TextSecondary)
+                        }
+                    }
+                    if (droppedPinAddress.isNotBlank()) {
+                        Text(droppedPinAddress, color = TextSecondary, fontSize = 12.sp)
+                    }
+                    Button(
+                        onClick = {
+                            viewModel.calculateRoute(pin, droppedPinTitle, autoStart = true)
+                            droppedPin = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Directions, contentDescription = null, tint = Color.Black)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Dẫn đường đến điểm này", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // 4. Route Selection Card (when calculated but not yet started)
+        if (activeRoute != null && !isNavigating) {
+            val route = activeRoute!!
+            Card(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
+                border = BorderStroke(1.dp, NeonGreen),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = destinationTitle,
+                                color = TextPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "${route.formattedDuration} • ${route.formattedDistance} • ${route.routeName}",
+                                color = NeonGreen,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        IconButton(onClick = { viewModel.stopNavigation() }) {
+                            Icon(Icons.Default.Close, contentDescription = null, tint = TextSecondary)
+                        }
+                    }
+
+                    // Alternatives row
+                    if (alternativeRoutes.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { viewModel.selectRoute(route) },
+                                colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan.copy(alpha = 0.25f)),
+                                border = BorderStroke(1.dp, YamahaCyan),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Tuyến 1: ${route.formattedDuration}", color = TextPrimary, fontSize = 12.sp)
+                            }
+                            alternativeRoutes.firstOrNull()?.let { alt ->
+                                OutlinedButton(
+                                    onClick = { viewModel.selectRoute(alt) },
+                                    border = BorderStroke(1.dp, DarkSurfaceBorder),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Tuyến 2: ${alt.timeDiffString}", color = TextSecondary, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = { viewModel.startNavigation() },
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonGreen),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Navigation, contentDescription = null, tint = Color.Black)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("BẮT ĐẦU DẪN ĐƯỜNG", color = Color.Black, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+
+        // 5. Floating Controls (Right Side)
         Column(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .padding(end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Orientation mode (North-Up vs Heading Tracking)
             FloatingActionButton(
                 onClick = { viewModel.toggleNorthUp() },
                 containerColor = DarkSurfaceCard,
@@ -279,14 +523,9 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                 shape = CircleShape,
                 modifier = Modifier.size(46.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Explore,
-                    contentDescription = "Chế độ xoay",
-                    modifier = Modifier.size(22.dp)
-                )
+                Icon(Icons.Default.Explore, contentDescription = "Xoay bản đồ", modifier = Modifier.size(22.dp))
             }
 
-            // Recenter My Location
             FloatingActionButton(
                 onClick = {
                     currentLoc?.let {
@@ -300,16 +539,12 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                 shape = CircleShape,
                 modifier = Modifier.size(46.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.MyLocation,
-                    contentDescription = "Vị trí của tôi",
-                    modifier = Modifier.size(22.dp)
-                )
+                Icon(Icons.Default.MyLocation, contentDescription = "Vị trí của tôi", modifier = Modifier.size(22.dp))
             }
         }
 
-        // 4. Mini TFT Mirror Card (Bottom Left / Draggable overlay)
-        if (showMiniPreview) {
+        // 6. Mini TFT Mirror Card (Bottom Left)
+        if (showMiniPreview && !isNavigating) {
             Card(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -318,14 +553,14 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     .aspectRatio(480f / 234f)
                     .clip(RoundedCornerShape(8.dp))
                     .border(1.dp, if (isStreaming) NeonGreen else YamahaCyan.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                    .clickable { showMiniPreview = false },
+                    .clickable { viewModel.toggleStreaming() },
                 colors = CardDefaults.cardColors(containerColor = Color.Black)
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (lastFrameBitmap != null) {
                         Image(
                             bitmap = lastFrameBitmap!!.asImageBitmap(),
-                            contentDescription = "TFT Mini Stream",
+                            contentDescription = "TFT Stream",
                             modifier = Modifier.fillMaxSize()
                         )
                     } else {
@@ -336,7 +571,6 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                             modifier = Modifier.align(Alignment.Center)
                         )
                     }
-
                     Text(
                         text = if (isStreaming) "LIVE TFT" else "PAUSED",
                         color = if (isStreaming) NeonGreen else TextMuted,
@@ -352,47 +586,147 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
         }
     }
 
-    // Search dialog
-    if (showSearchDialog) {
-        var query by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showSearchDialog = false },
-            title = { Text("Tìm kiếm điểm đến", color = TextPrimary) },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        label = { Text("Nhập địa chỉ / tên đường") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        "Gợi ý: Tìm kiếm địa điểm và chạm 'Bắt đầu' để vẽ lộ trình sang đồng hồ xe máy.",
-                        color = TextMuted,
-                        fontSize = 11.sp
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val base = currentLoc ?: LatLng(10.7769, 106.7009)
-                        val target = LatLng(base.latitude + 0.015, base.longitude + 0.012)
-                        viewModel.startNavigationTo(target, if (query.isNotBlank()) query else "Điểm đến đã chọn")
-                        showSearchDialog = false
+    // 7. Modal Bottom Sheet: Search Places & Quick Destinations
+    if (showSearchSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSearchSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = DarkSurfaceCard
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = {
+                        searchQuery = it
+                        viewModel.searchPlaces(it)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan)
+                    placeholder = { Text("Nhập địa chỉ hoặc tên đường...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = YamahaCyan) },
+                    trailingIcon = {
+                        if (searchQuery.isNotBlank()) {
+                            IconButton(onClick = { searchQuery = ""; viewModel.searchPlaces("") }) {
+                                Icon(Icons.Default.Close, contentDescription = null)
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = YamahaCyan,
+                        unfocusedBorderColor = DarkSurfaceBorder
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Quick Action Chips: Home, Work, Gas
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Bắt đầu", color = Color.Black, fontWeight = FontWeight.Bold)
+                    homePlace?.let { home ->
+                        Button(
+                            onClick = {
+                                viewModel.calculateRoute(home.coordinate, home.name, autoStart = true)
+                                showSearchSheet = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Home, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Về nhà", fontSize = 12.sp, color = TextPrimary)
+                        }
+                    }
+
+                    workPlace?.let { work ->
+                        Button(
+                            onClick = {
+                                viewModel.calculateRoute(work.coordinate, work.name, autoStart = true)
+                                showSearchSheet = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Work, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Đi làm", fontSize = 12.sp, color = TextPrimary)
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            viewModel.fetchNearbyGasStations()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.LocalGasStation, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Cây xăng", fontSize = 12.sp, color = TextPrimary)
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSearchDialog = false }) {
-                    Text("Hủy", color = TextSecondary)
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (isSearching) {
+                    Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = YamahaCyan, modifier = Modifier.size(28.dp))
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(320.dp)
+                    ) {
+                        items(searchResults) { place ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clickable {
+                                        viewModel.calculateRoute(place.coordinate, place.name, autoStart = true)
+                                        showSearchSheet = false
+                                    },
+                                colors = CardDefaults.cardColors(containerColor = DarkBackground),
+                                border = BorderStroke(1.dp, DarkSurfaceBorder)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.LocationOn, contentDescription = null, tint = YamahaCyan)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(place.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text(place.address, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-            },
-            containerColor = DarkSurface
-        )
+            }
+        }
+    }
+}
+
+private fun getDirectionIcon(direction: NavigationDirection): ImageVector {
+    return when (direction) {
+        NavigationDirection.STRAIGHT -> Icons.Default.NearMe
+        NavigationDirection.SLIGHT_RIGHT -> Icons.Default.TurnSlightRight
+        NavigationDirection.RIGHT, NavigationDirection.SHARP_RIGHT -> Icons.Default.TurnRight
+        NavigationDirection.SLIGHT_LEFT -> Icons.Default.TurnSlightLeft
+        NavigationDirection.LEFT, NavigationDirection.SHARP_LEFT -> Icons.Default.TurnLeft
+        NavigationDirection.U_TURN -> Icons.Default.UturnLeft
+        NavigationDirection.ROUNDABOUT -> Icons.Default.Explore
+        NavigationDirection.DESTINATION -> Icons.Default.Check
     }
 }

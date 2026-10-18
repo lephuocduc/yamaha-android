@@ -790,6 +790,19 @@ class YamahaCCUManager(
         _currentRoadNameOnTFT.value = ""
     }
 
+    fun updateRoadNameOnTFT(name: String) {
+        updateCurrentRoadNameOnTFT(name)
+    }
+
+    fun sendTurnByTurn(instruction: vn.tftlink.data.model.nav.NavigationInstruction) {
+        updateCurrentRoadNameOnTFT(
+            rawRoadName = if (instruction.nextRoadName.isNotBlank()) instruction.nextRoadName else instruction.detailedInstruction,
+            distanceMeters = instruction.distanceMeters.toDouble(),
+            maneuverIcon = instruction.direction.code,
+            etaText = instruction.etaString
+        )
+    }
+
     // =========================================================================
     // PARSING TELEMETRY & NGẮT KẾT NỐI
     // =========================================================================
