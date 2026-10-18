@@ -58,6 +58,9 @@ import vn.tftlink.ui.theme.TextMuted
 import vn.tftlink.ui.theme.TextPrimary
 import vn.tftlink.ui.theme.YamahaCyan
 
+import android.content.Intent
+import android.widget.Toast
+
 sealed class NavigationTab(val route: String, val title: String, val icon: ImageVector) {
     object Dashboard : NavigationTab("dashboard", "Trang chủ", Icons.Default.Speed)
     object Map : NavigationTab("map", "Bản đồ", Icons.Default.Map)
@@ -71,12 +74,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        viewModel.handleIncomingIntent(intent)
 
         setContent {
             NConnectTheme {
                 MainAppRoot(viewModel = viewModel)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        viewModel.handleIncomingIntent(intent)
     }
 }
 
@@ -85,6 +95,16 @@ fun MainAppRoot(viewModel: MainViewModel) {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
     val isNavigating by viewModel.isNavigating.collectAsState()
+    val sharedDest by viewModel.sharedDestinationEvent.collectAsState()
+
+    // Tự động chuyển qua tab Bản đồ khi nhận địa điểm từ Google Maps
+    LaunchedEffect(sharedDest) {
+        sharedDest?.let { dest ->
+            selectedTab = 1
+            Toast.makeText(context, "Đã nhận vị trí Google Maps: ${dest.title}", Toast.LENGTH_LONG).show()
+            viewModel.clearSharedDestinationEvent()
+        }
+    }
 
     // Tự động chuyển qua tab Bản đồ khi bắt đầu dẫn đường
     LaunchedEffect(isNavigating) {

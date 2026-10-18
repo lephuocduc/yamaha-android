@@ -166,6 +166,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
             cameraPositionState = cameraPositionState,
             properties = MapProperties(
                 isMyLocationEnabled = true,
+                isTrafficEnabled = true,
                 mapType = MapType.NORMAL
             ),
             uiSettings = MapUiSettings(

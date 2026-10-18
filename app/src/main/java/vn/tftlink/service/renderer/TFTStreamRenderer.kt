@@ -33,6 +33,11 @@ import kotlin.math.tan
  * Renderer tạo khung hình Bản Đồ OpenStreetMap cho màn hình TFT xe máy Yamaha
  * Tối ưu hóa 100% chạy nền qua Canvas / Bitmap pipeline, nén JPEG gửi lên xe
  */
+enum class ClusterMapSource(val id: String, val title: String) {
+    GOOGLE_MAPS_TRAFFIC("gmap_traffic", "Google Maps (Mật độ giao thông LIVE - Khuyên dùng)"),
+    OSM_CARTO("osm_carto", "CartoDB Voyager (OpenStreetMap)")
+}
+
 class TFTStreamRenderer(
     private val context: Context,
     private val scope: CoroutineScope,
@@ -45,7 +50,10 @@ class TFTStreamRenderer(
     }
 
     private val tileEngine = OSMTileEngine.getInstance(context)
+    val googleMapRenderer = GoogleMapClusterRenderer(context, scope, targetWidth, targetHeight)
     private val renderMutex = Mutex()
+
+    var clusterMapSource: ClusterMapSource = ClusterMapSource.GOOGLE_MAPS_TRAFFIC
 
     private val _lastFrameBitmap = MutableStateFlow<Bitmap?>(null)
     val lastFrameBitmap: StateFlow<Bitmap?> = _lastFrameBitmap.asStateFlow()
@@ -129,9 +137,15 @@ class TFTStreamRenderer(
                 val speed = getSpeed()
                 val rerouting = getIsRerouting()
 
-                val bytes = renderLiveMapFrame(loc, course, route, alts, inst, speed, rerouting)
-                if (bytes != null) {
-                    onFrameReady(bytes)
+                if (clusterMapSource == ClusterMapSource.GOOGLE_MAPS_TRAFFIC) {
+                    googleMapRenderer.captureFrame(loc, course, route, inst, speed, rerouting) { bytes ->
+                        onFrameReady(bytes)
+                    }
+                } else {
+                    val bytes = renderLiveMapFrame(loc, course, route, alts, inst, speed, rerouting)
+                    if (bytes != null) {
+                        onFrameReady(bytes)
+                    }
                 }
                 delay(1200)
             }

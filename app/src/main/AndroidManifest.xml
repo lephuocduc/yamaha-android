@@ -89,6 +89,34 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="mynmax" />
             </intent-filter>
+
+            <!-- Tiếp nhận địa điểm chia sẻ từ ứng dụng Google Maps -->
+            <intent-filter android:label="Dẫn đường bằng NConnect">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!-- Tiếp nhận toạ độ địa lý geo: -->
+            <intent-filter android:label="Dẫn đường bằng NConnect">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="geo" />
+            </intent-filter>
+
+            <!-- Tiếp nhận liên kết Google Maps -->
+            <intent-filter android:label="Dẫn đường bằng NConnect">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="maps.google.com" />
+                <data android:scheme="https" android:host="maps.app.goo.gl" />
+                <data android:scheme="https" android:host="goo.gl" android:pathPrefix="/maps" />
+                <data android:scheme="http" android:host="maps.google.com" />
+                <data android:scheme="http" android:host="maps.app.goo.gl" />
+                <data android:scheme="http" android:host="goo.gl" android:pathPrefix="/maps" />
+            </intent-filter>
         </activity>
 
         <!-- Background BLE & Navigation Foreground Service -->

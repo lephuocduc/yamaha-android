@@ -36,6 +36,10 @@ import vn.tftlink.service.trip.TripHistoryManager
 import vn.tftlink.service.update.AppUpdateInfo
 import vn.tftlink.service.update.AppUpdateManager
 import vn.tftlink.service.update.UpdateStatus
+import android.content.Intent
+import vn.tftlink.service.nav.GoogleMapsShareResolver
+import vn.tftlink.service.nav.ResolvedDestination
+import vn.tftlink.service.renderer.ClusterMapSource
 import java.io.File
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -91,6 +95,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isNorthUp = MutableStateFlow(false)
     val isNorthUp: StateFlow<Boolean> = _isNorthUp.asStateFlow()
+
+    // Cluster Map Engine Mode (Google Maps Traffic vs OSM CartoDB)
+    private val _clusterMapSource = MutableStateFlow(streamRenderer.clusterMapSource)
+    val clusterMapSource: StateFlow<ClusterMapSource> = _clusterMapSource.asStateFlow()
+
+    // Shared destination from Google Maps app
+    private val _sharedDestinationEvent = MutableStateFlow<ResolvedDestination?>(null)
+    val sharedDestinationEvent: StateFlow<ResolvedDestination?> = _sharedDestinationEvent.asStateFlow()
 
     // Parking Location (Find My Bike)
     val parkedLocation: StateFlow<ParkedBikeLocation?> = parkingManager.lastParkedLocation
@@ -452,9 +464,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun getCurrentVersionName(): String = updateManager.getCurrentVersionName()
     fun getCurrentVersionCode(): Int = updateManager.getCurrentVersionCode()
 
+    // =========================================================================
+    // GOOGLE MAPS TRAFFIC & SHARE LOCATION ACTIONS
+    // =========================================================================
+
+    fun setClusterMapSource(source: ClusterMapSource) {
+        _clusterMapSource.value = source
+        streamRenderer.clusterMapSource = source
+    }
+
+    fun clearSharedDestinationEvent() {
+        _sharedDestinationEvent.value = null
+    }
+
+    fun handleIncomingIntent(intent: Intent) {
+        val action = intent.action ?: return
+        if (action == Intent.ACTION_SEND || action == Intent.ACTION_VIEW) {
+            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+            val uri = intent.data
+
+            viewModelScope.launch {
+                val resolved = GoogleMapsShareResolver.resolve(getApplication(), sharedText, uri)
+                if (resolved != null) {
+                    _sharedDestinationEvent.value = resolved
+                    val target = LatLng(resolved.latitude, resolved.longitude)
+                    calculateRoute(target, resolved.title, autoStart = true)
+                    navEngine.speakVoice("Đã nhận điểm đến từ Google Maps: ${resolved.title}. Bắt đầu dẫn đường.")
+                }
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
         streamRenderer.stopStreamingLoop()
+        streamRenderer.googleMapRenderer.onDestroy()
     }
 }

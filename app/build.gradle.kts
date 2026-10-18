@@ -13,8 +13,8 @@ android {
         applicationId = "vn.tftlink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 55
-        versionName = "0.5.25"
+        versionCode = 56
+        versionName = "0.5.26"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

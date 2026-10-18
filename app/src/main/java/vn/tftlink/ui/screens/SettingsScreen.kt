@@ -56,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import vn.tftlink.service.protocol.StreetCrossProtocol
+import vn.tftlink.service.renderer.ClusterMapSource
 import vn.tftlink.service.renderer.OSMTileEngine
 import vn.tftlink.service.update.UpdateStatus
 import vn.tftlink.ui.MainViewModel
@@ -75,7 +76,9 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val connectionState by viewModel.connectionState.collectAsState()
     val connectedBike by viewModel.connectedBike.collectAsState()
     val updateStatus by viewModel.updateStatus.collectAsState()
+    val clusterMapSource by viewModel.clusterMapSource.collectAsState()
 
+    var mapSourceMenuExpanded by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(updateStatus) {
@@ -205,29 +208,30 @@ fun SettingsScreen(viewModel: MainViewModel) {
                     Text("BẢN ĐỒ & THUẬT TOÁN DẪN ĐƯỜNG", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(10.dp))
 
+                    // Lựa chọn nguồn bản đồ truyền lên cụm đồng hồ
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
-                            value = selectedStyle,
+                            value = clusterMapSource.title,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Giao diện ngói bản đồ") },
+                            label = { Text("Nguồn bản đồ chiếu lên đồng hồ xe") },
                             trailingIcon = {
-                                IconButton(onClick = { styleMenuExpanded = !styleMenuExpanded }) {
+                                IconButton(onClick = { mapSourceMenuExpanded = !mapSourceMenuExpanded }) {
                                     Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth().clickable { styleMenuExpanded = true }
+                            modifier = Modifier.fillMaxWidth().clickable { mapSourceMenuExpanded = true }
                         )
                         DropdownMenu(
-                            expanded = styleMenuExpanded,
-                            onDismissRequest = { styleMenuExpanded = false }
+                            expanded = mapSourceMenuExpanded,
+                            onDismissRequest = { mapSourceMenuExpanded = false }
                         ) {
-                            tileStyles.forEach { style ->
+                            ClusterMapSource.values().forEach { source ->
                                 DropdownMenuItem(
-                                    text = { Text(style) },
+                                    text = { Text(source.title) },
                                     onClick = {
-                                        selectedStyle = style
-                                        styleMenuExpanded = false
+                                        viewModel.setClusterMapSource(source)
+                                        mapSourceMenuExpanded = false
                                     }
                                 )
                             }
@@ -236,14 +240,47 @@ fun SettingsScreen(viewModel: MainViewModel) {
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    OutlinedTextField(
-                        value = cartoApiKey,
-                        onValueChange = { cartoApiKey = it },
-                        label = { Text("CartoDB API Key") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    if (clusterMapSource == ClusterMapSource.OSM_CARTO) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = selectedStyle,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Giao diện ngói bản đồ OSM") },
+                                trailingIcon = {
+                                    IconButton(onClick = { styleMenuExpanded = !styleMenuExpanded }) {
+                                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().clickable { styleMenuExpanded = true }
+                            )
+                            DropdownMenu(
+                                expanded = styleMenuExpanded,
+                                onDismissRequest = { styleMenuExpanded = false }
+                            ) {
+                                tileStyles.forEach { style ->
+                                    DropdownMenuItem(
+                                        text = { Text(style) },
+                                        onClick = {
+                                            selectedStyle = style
+                                            styleMenuExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = cartoApiKey,
+                            onValueChange = { cartoApiKey = it },
+                            label = { Text("CartoDB API Key") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -253,11 +290,17 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         Text("Valhalla Engine (Motorcycle)", color = NeonGreen, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    Text("✓ Bản đồ ngói CartoDB Voyager sạch bóng, không watermark", color = NeonGreen, fontSize = 11.sp)
-                    Text("✓ Thuật toán Valhalla Engine định tuyến xe máy chuẩn Việt Nam", color = NeonGreen, fontSize = 11.sp)
-                    Text("✓ Tốc độ nạp ngói cực nhanh qua mạng lưới CDN toàn cầu", color = TextMuted, fontSize = 11.sp)
+                    if (clusterMapSource == ClusterMapSource.GOOGLE_MAPS_TRAFFIC) {
+                        Text("✓ Google Maps: Mật độ giao thông thời gian thực (Xanh lá / Vàng / Đỏ kẹt xe)", color = NeonGreen, fontSize = 11.sp)
+                        Text("✓ Góc nhìn 3D nghiêng 45° xoay theo hướng xe chạy, HUD chỉ dẫn rẽ và tốc độ", color = NeonGreen, fontSize = 11.sp)
+                        Text("✓ Hỗ trợ bấm 'Chia sẻ' từ ứng dụng Google Maps trực tiếp sang NConnect", color = YamahaCyan, fontSize = 11.sp)
+                    } else {
+                        Text("✓ Bản đồ ngói CartoDB Voyager sạch bóng, không watermark", color = NeonGreen, fontSize = 11.sp)
+                        Text("✓ Thuật toán Valhalla Engine định tuyến xe máy chuẩn Việt Nam", color = NeonGreen, fontSize = 11.sp)
+                        Text("✓ Tốc độ nạp ngói cực nhanh qua mạng lưới CDN toàn cầu", color = TextMuted, fontSize = 11.sp)
+                    }
                 }
             }
         }
