@@ -1,6 +1,6 @@
 {
-  "versionCode": 64,
-  "versionName": "0.5.34",
-  "releaseNotes": "Sửa triệt để lỗi dẫn đường và chia sẻ Google Maps: 1) Nhấn giữ ghim bản đồ -> Dẫn đường: Lưu vết và tự động fallback vị trí GPS không bị thoát ngầm, hiển thị card tính toán lộ trình và tự động zoom khung nhìn bao quát tuyến đường; 2) Chia sẻ từ Google Maps: Hỗ trợ phân giải toạ độ !3d/!4d, chuyển hướng HTML và dự phòng Photon Geocoding, tự động mở bản đồ và lập lộ trình ngay lập tức.",
+  "versionCode": 65,
+  "versionName": "0.5.35",
+  "releaseNotes": "Sửa triệt để lỗi kiểm tra cập nhật lại bị treo xoay vòng vĩnh viễn: 1) Tách vòng đời updater với SupervisorJob độc lập, không bị hủy coroutine khi chuyển trang hoặc cài đặt APK; 2) Triệt tiêu socket nhàn rỗi (ConnectionPool = 0) và đóng toàn bộ response kết nối, loại bỏ hoàn toàn hiện tượng kẹt socket do mạng 4G/5G rớt ngầm; 3) Tự động chuyển máy chủ Raw GitHub/jsDelivr không giới hạn lượt truy cập; 4) Bọc NonCancellable và timeout 8s đảm bảo trạng thái luôn hoàn trả chính xác.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

@@ -61,7 +61,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val tripManager = TripHistoryManager.getInstance(application, viewModelScope)
 
     // 4. In-App Software Updater
-    val updateManager = AppUpdateManager.getInstance(application, viewModelScope)
+    val updateManager = AppUpdateManager.getInstance(application)
     val updateStatus: StateFlow<UpdateStatus> = updateManager.status
 
     // State flows from CCU

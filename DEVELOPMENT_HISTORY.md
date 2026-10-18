@@ -646,3 +646,42 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - Bổ sung giải mã URL chuyển hướng từ thẻ `<meta refresh>` và `<link rel="canonical">` trong mã HTML.
      - Tích hợp cơ chế Geocoding dự phòng bằng **Photon OpenStreetMap API** (`photon.komoot.io`), đảm bảo 100% địa chỉ chia sẻ từ Google Maps tại Việt Nam đều được chuyển thành toạ độ chính xác ngay cả khi không có Google Play Services.
      - `MainActivity` tự động chuyển thẳng sang tab Bản đồ (`selectedTab = 1`) ngay khi nhận được liên kết chia sẻ hoặc khi đang tính toán lộ trình.
+
+---
+
+### 📌 Quy tắc 13: Khắc phục triệt để lỗi kiểm tra cập nhật lại bị treo xoay vòng vĩnh viễn (v0.5.35 Build 65)
+- **Hiện tượng lỗi người dùng báo**:
+  - *Cập nhật 1 lần thành công rồi, một hồi bấm cập nhật lại là nó xoay vòng vòng đang kiểm tra phiên bản mới từ máy chủ, tôi phải reset lại thì mới trở lại bình thường, nhưng cũng chỉ cập nhật được 1 lần, sau đó cập nhật nữa thì lại quay tiếp.*
+- **Nguyên nhân gốc rễ kỹ thuật được phát hiện**:
+  1. **Rò rỉ CoroutineScope của ViewModel vào Singleton tĩnh (`scope leak`)**:
+     - `AppUpdateManager` là một Singleton tĩnh (`getInstance(context, scope)`).
+     - Khi `MainViewModel` được khởi tạo lần đầu, nó truyền `viewModelScope` vào `AppUpdateManager`.
+     - Khi người dùng bấm cài đặt bản cập nhật, chuyển ứng dụng hoặc hệ điều hành Android giải phóng `MainActivity`, `MainViewModel` bị `clear` và `viewModelScope` bị **hủy vĩnh viễn (cancelled)**.
+     - Tuy nhiên biến tĩnh `instance` của `AppUpdateManager` vẫn lưu giữ trong bộ nhớ tiến trình (RAM) cùng với cái `scope` đã chết đó!
+     - Khi mở lại hoặc bấm kiểm tra lần tiếp theo: `_status.value` được set thành `UpdateStatus.Checking`, sau đó gọi `scope.launch(Dispatchers.IO)`. Do `scope` đã bị hủy từ trước, coroutine **lập tức bị hủy mà không thực thi khối mã bên trong**. `_status.value` bị kẹt cứng ở trạng thái `Checking` vĩnh viễn cho đến khi người dùng force-close / reset app!
+  2. **Kẹt Zombie Socket do Connection Pool của OkHttp trên mạng di động 4G/5G**:
+     - `checkHttpClient` trước đây dùng `ConnectionPool` mặc định (giữ kết nối TCP idle 5 phút).
+     - Trên mạng di động tại Việt Nam (Viettel, Vina, Mobi), firewall NAT của nhà mạng thường âm thầm ngắt trạng thái kết nối TCP sau 30-60 giây không có lưu lượng.
+     - Sau một lúc người dùng bấm "Kiểm tra lại", OkHttp lấy lại socket cũ từ ConnectionPool để gửi HTTP request. Nhà mạng không phản hồi gói tin, dẫn đến việc OkHttp bị treo chờ socket read timeout.
+  3. **Rò rỉ Socket do không đóng `Response` (`response.use`)**:
+     - Trong `fetchRemoteVersionInfo()`, khi kết nối đến GitHub API gặp mã lỗi (ví dụ 403 Rate Limit), khối mã gọi `throw Exception(...)` mà không gọi `response.close()`. Socket bị chiếm dụng và gây nghẽn pool.
+  4. **Thứ tự ưu tiên endpoint sai dẫn đến chạm trần GitHub API Rate Limit (60 req/hour)**:
+     - Endpoint 1 trước đây đặt `api.github.com/.../contents/version.json`. Đây là REST API có giới hạn 60 lượt/giờ đối với IP công cộng không xác thực. Nhiều người dùng trên cùng mạng 4G/cáp quang dùng chung IP sẽ bị trả về HTTP 403 Forbidden.
+  5. **Bị chặn cập nhật trạng thái lỗi khi Timeout coroutine**:
+     - `withTimeout(15_000L)` khi quá giờ sẽ ném ra `TimeoutCancellationException`. Khi coroutine đang trong trạng thái cancelled, nếu gọi `withContext(Dispatchers.Main)` mà không có `NonCancellable` thì lệnh chuyển sang Main thread sẽ bị ném tiếp `CancellationException`, khiến `_status.value = UpdateStatus.Error(...)` không bao giờ được gán!
+- **Giải pháp chuẩn hóa triệt để**:
+  1. **Sở hữu CoroutineScope độc lập cấp ứng dụng (`SupervisorJob`)**:
+     - `AppUpdateManager` tự quản lý `private val updateScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)`.
+     - `getInstance(context: Context)` chỉ nhận `applicationContext`, **tuyệt đối không nhận `viewModelScope`**. Nhờ đó vòng đời kiểm tra cập nhật tồn tại bền vững cùng tiến trình app, không bao giờ bị hủy theo ViewModel.
+  2. **Triệt tiêu hoàn toàn Connection Pool cho luồng kiểm tra cập nhật (`ConnectionPool(0, 1, TimeUnit.NANOSECONDS)`)**:
+     - Khởi tạo `checkHttpClient` với `ConnectionPool = 0` và thêm header `"Connection", "close"`. Mọi lần kiểm tra cập nhật đều tạo mới bắt tay TLS 1.3 và đóng socket ngay khi xong. Miễn nhiễm 100% với hiện tượng rớt NAT ngầm trên mạng di động.
+  3. **Chuyển sang cơ chế Async không phong tỏa với `Call.await()`**:
+     - Dùng `suspendCancellableCoroutine` bọc `Call.enqueue()`. Khi coroutine bị hủy hoặc timeout, socket mạng được ngắt tức thì (`call.cancel()`), không chiếm dụng thread pool.
+  4. **Đóng 100% kết nối với `response.use { ... }`**:
+     - Đảm bảo toàn bộ body và socket của mọi endpoint luôn được đóng tự động kể cả khi gặp mã lỗi hoặc ngoại lệ.
+  5. **Đảo thứ tự ưu tiên: Đưa Raw GitHub & jsDelivr lên số 1**:
+     - Ưu tiên #1: Raw GitHub `raw.githubusercontent.com/.../version.json?t=<timestamp>` (truy cập trực tiếp repo, không rate limit).
+     - Ưu tiên #2: jsDelivr Edge CDN `cdn.jsdelivr.net/.../version.json?t=<timestamp>` (máy chủ biên tại VN/Singapore, cực nhanh, không rate limit).
+     - Ưu tiên #3: GitHub Contents API (chỉ dùng làm phương án dự phòng cuối cùng).
+  6. **Bọc `withContext(NonCancellable)` trong khối xử lý lỗi & rút ngắn timeout còn 8 giây**:
+     - Dù timeout hay có lỗi bất kỳ, trạng thái luôn được hoàn trả dứt khoát về `UpdateStatus.Error` hoặc `UpdateStatus.Idle` (nếu hủy), **tuyệt đối không bao giờ kẹt lại ở `UpdateStatus.Checking`**.

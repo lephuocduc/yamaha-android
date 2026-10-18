@@ -17,20 +17,28 @@ import vn.tftlink.util.GeoUtils
 import java.util.Locale
 import kotlin.math.roundToInt
 
-class TripHistoryManager(
-    private val context: Context,
-    private val scope: CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+
+class TripHistoryManager private constructor(
+    private val context: Context
 ) {
     companion object {
         @Volatile
         private var instance: TripHistoryManager? = null
 
-        fun getInstance(context: Context, scope: CoroutineScope): TripHistoryManager {
+        fun getInstance(context: Context): TripHistoryManager {
             return instance ?: synchronized(this) {
-                instance ?: TripHistoryManager(context.applicationContext, scope).also { instance = it }
+                instance ?: TripHistoryManager(context.applicationContext).also { instance = it }
             }
         }
+
+        @Suppress("UNUSED_PARAMETER")
+        fun getInstance(context: Context, scope: CoroutineScope): TripHistoryManager {
+            return getInstance(context)
+        }
     }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val tripDao = AppDatabase.getInstance(context).tripDao()
 

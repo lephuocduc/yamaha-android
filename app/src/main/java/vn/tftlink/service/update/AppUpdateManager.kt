@@ -11,20 +11,31 @@ import android.provider.Settings
 import androidx.core.content.FileProvider
 import android.util.Base64
 import com.google.gson.Gson
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 data class AppUpdateInfo(
     val versionCode: Int,
@@ -44,9 +55,8 @@ sealed class UpdateStatus {
     data class Error(val message: String) : UpdateStatus()
 }
 
-class AppUpdateManager(
-    private val context: Context,
-    private val scope: CoroutineScope
+class AppUpdateManager private constructor(
+    private val context: Context
 ) {
     companion object {
         const val VERSION_CHECK_URL =
@@ -57,22 +67,36 @@ class AppUpdateManager(
         @Volatile
         private var instance: AppUpdateManager? = null
 
-        fun getInstance(context: Context, scope: CoroutineScope): AppUpdateManager {
+        fun getInstance(context: Context): AppUpdateManager {
             return instance ?: synchronized(this) {
-                instance ?: AppUpdateManager(context.applicationContext, scope).also { instance = it }
+                instance ?: AppUpdateManager(context.applicationContext).also { instance = it }
             }
+        }
+
+        // Backward compatibility overload
+        @Suppress("UNUSED_PARAMETER")
+        fun getInstance(context: Context, scope: CoroutineScope): AppUpdateManager {
+            return getInstance(context)
         }
     }
 
+    // Process-lifelong scope using SupervisorJob to prevent child failures from cancelling the scope
+    private val updateScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Dedicated client with ConnectionPool(0, ...) to ensure each check opens a fresh TCP/TLS handshake.
+    // This completely eliminates zombie/dead pooled sockets caused by carrier NAT idle drop on 4G/5G.
     private val checkHttpClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(6, TimeUnit.SECONDS)
+        .connectionPool(ConnectionPool(0, 1, TimeUnit.NANOSECONDS))
+        .retryOnConnectionFailure(true)
         .followRedirects(true)
         .build()
 
     private val downloadHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .followRedirects(true)
         .build()
 
@@ -83,12 +107,29 @@ class AppUpdateManager(
     private val _status = MutableStateFlow<UpdateStatus>(UpdateStatus.Idle)
     val status: StateFlow<UpdateStatus> = _status.asStateFlow()
 
+    private suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation {
+            try {
+                cancel()
+            } catch (_: Throwable) {}
+        }
+        enqueue(object : Callback {
+            override fun onResponse(call: Call, response: Response) {
+                continuation.resume(response)
+            }
+
+            override fun onFailure(call: Call, e: IOException) {
+                continuation.resumeWithException(e)
+            }
+        })
+    }
+
     fun getCurrentVersionName(): String {
         return try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            pInfo.versionName ?: "0.5.23"
+            pInfo.versionName ?: "0.5.34"
         } catch (_: Exception) {
-            "0.5.23"
+            "0.5.34"
         }
     }
 
@@ -102,18 +143,19 @@ class AppUpdateManager(
                 pInfo.versionCode
             }
         } catch (_: Exception) {
-            53
+            64
         }
     }
 
     private suspend fun fetchRemoteVersionInfo(): Map<String, Any> {
+        val now = System.currentTimeMillis()
         val endpoints = listOf(
-            // 1. Official GitHub Contents API (Never blocked in VN, direct database response)
-            "https://api.github.com/repos/lephuocduc/yamaha-android/contents/version.json" to true,
-            // 2. jsDelivr Global Edge CDN (Nodes inside VN/Singapore, ultra-fast < 200ms)
-            "https://cdn.jsdelivr.net/gh/lephuocduc/yamaha-android@main/version.json" to false,
-            // 3. Raw GitHub with timestamp cache-busting
-            "$VERSION_CHECK_URL?t=${System.currentTimeMillis()}" to false
+            // 1. Raw GitHub with timestamp cache-busting (Direct repo content, no rate limit)
+            "$VERSION_CHECK_URL?t=$now" to false,
+            // 2. jsDelivr Global Edge CDN (Fast edge servers in VN/SG, no rate limit)
+            "https://cdn.jsdelivr.net/gh/lephuocduc/yamaha-android@main/version.json?t=$now" to false,
+            // 3. Official GitHub Contents API (Fallback if direct raw domain is blocked by DNS/ISP)
+            "https://api.github.com/repos/lephuocduc/yamaha-android/contents/version.json?t=$now" to true
         )
 
         var lastException: Exception? = null
@@ -123,23 +165,26 @@ class AppUpdateManager(
                 val request = Request.Builder()
                     .url(url)
                     .header("User-Agent", "Mozilla/5.0 NConnect-Yamaha-Android/1.0")
-                    .header("Cache-Control", "no-cache")
+                    .header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    .header("Pragma", "no-cache")
+                    .header("Connection", "close")
                     .build()
 
-                val response = checkHttpClient.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    throw Exception("HTTP ${response.code}")
-                }
-                val rawBody = response.body?.string() ?: throw Exception("Empty response")
-
-                val jsonBody = if (isGitHubContentsApi) {
-                    val root = gson.fromJson(rawBody, Map::class.java)
-                    val base64Content = (root["content"] as? String)?.replace("\n", "")?.replace("\r", "")
-                        ?: throw Exception("No content field in API response")
-                    val decodedBytes = Base64.decode(base64Content, Base64.DEFAULT)
-                    String(decodedBytes, Charsets.UTF_8)
-                } else {
-                    rawBody
+                val response = checkHttpClient.newCall(request).await()
+                val jsonBody = response.use { resp ->
+                    if (!resp.isSuccessful) {
+                        throw Exception("HTTP ${resp.code}")
+                    }
+                    val rawBody = resp.body?.string() ?: throw Exception("Empty response")
+                    if (isGitHubContentsApi) {
+                        val root = gson.fromJson(rawBody, Map::class.java)
+                        val base64Content = (root["content"] as? String)?.replace("\n", "")?.replace("\r", "")
+                            ?: throw Exception("No content field in API response")
+                        val decodedBytes = Base64.decode(base64Content, Base64.DEFAULT)
+                        String(decodedBytes, Charsets.UTF_8)
+                    } else {
+                        rawBody
+                    }
                 }
 
                 @Suppress("UNCHECKED_CAST")
@@ -152,15 +197,16 @@ class AppUpdateManager(
             }
         }
 
-        throw lastException ?: Exception("Không thể kết nối đến máy chủ cập nhật (Vui lòng kiểm tra mạng)")
+        throw lastException ?: Exception("Không thể kết nối đến máy chủ cập nhật (Vui lòng kiểm tra kết nối mạng)")
     }
 
     fun checkForUpdate(silentIfUpToDate: Boolean = false) {
         checkJob?.cancel()
         _status.value = UpdateStatus.Checking
-        checkJob = scope.launch(Dispatchers.IO) {
+
+        checkJob = updateScope.launch {
             try {
-                withTimeout(15_000L) {
+                withTimeout(8_000L) {
                     val parsed = fetchRemoteVersionInfo()
 
                     val remoteCode = (parsed["versionCode"] as? Number)?.toInt() ?: 0
@@ -192,11 +238,23 @@ class AppUpdateManager(
                         }
                     }
                 }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    _status.value = UpdateStatus.Error(
-                        e.localizedMessage ?: "Lỗi kiểm tra cập nhật (Vui lòng thử lại)"
-                    )
+            } catch (e: Throwable) {
+                withContext(NonCancellable) {
+                    withContext(Dispatchers.Main) {
+                        if (e is CancellationException && checkJob?.isCancelled == true) {
+                            _status.value = UpdateStatus.Idle
+                        } else {
+                            val errorMsg = when {
+                                e is kotlinx.coroutines.TimeoutCancellationException ->
+                                    "Hết thời gian chờ phản hồi từ máy chủ (Quá 8 giây)"
+                                e.localizedMessage?.contains("403") == true ->
+                                    "Máy chủ GitHub đang bận hoặc giới hạn kết nối, vui lòng thử lại sau giây lát"
+                                else ->
+                                    e.localizedMessage ?: "Không thể kết nối đến máy chủ cập nhật"
+                            }
+                            _status.value = UpdateStatus.Error(errorMsg)
+                        }
+                    }
                 }
             }
         }
@@ -204,7 +262,9 @@ class AppUpdateManager(
 
     fun startDownloadAndInstall(info: AppUpdateInfo) {
         downloadJob?.cancel()
-        downloadJob = scope.launch(Dispatchers.IO) {
+        _status.value = UpdateStatus.Downloading(0, 0.0, 0.0)
+
+        downloadJob = updateScope.launch {
             try {
                 val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
                 val updateDir = File(baseDir, "updates")
@@ -221,43 +281,56 @@ class AppUpdateManager(
                     .header("User-Agent", "Mozilla/5.0 NConnect-Yamaha-Android/1.0")
                     .build()
 
-                val response = downloadHttpClient.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    throw Exception("Tải tập tin thất bại (Mã lỗi: ${response.code})")
-                }
+                val response = downloadHttpClient.newCall(request).await()
+                response.use { resp ->
+                    if (!resp.isSuccessful) {
+                        throw Exception("Tải tập tin thất bại (Mã lỗi: ${resp.code})")
+                    }
 
-                val body = response.body ?: throw Exception("Nội dung tải về rỗng")
-                val totalBytes = body.contentLength()
-                val inputStream = body.byteStream()
-                val outputStream = FileOutputStream(apkFile)
+                    val body = resp.body ?: throw Exception("Nội dung tải về rỗng")
+                    val totalBytes = body.contentLength()
 
-                val buffer = ByteArray(8192)
-                var downloadedBytes = 0L
-                var read: Int
+                    body.byteStream().use { inputStream ->
+                        FileOutputStream(apkFile).use { outputStream ->
+                            val buffer = ByteArray(32768)
+                            var downloadedBytes = 0L
+                            var read: Int
+                            var lastProgressUpdateMs = 0L
 
-                while (inputStream.read(buffer).also { read = it } != -1) {
-                    outputStream.write(buffer, 0, read)
-                    downloadedBytes += read
-                    val percent = if (totalBytes > 0) ((downloadedBytes * 100) / totalBytes).toInt() else 0
-                    val downMb = downloadedBytes / (1024.0 * 1024.0)
-                    val totMb = totalBytes / (1024.0 * 1024.0)
+                            while (inputStream.read(buffer).also { read = it } != -1) {
+                                outputStream.write(buffer, 0, read)
+                                downloadedBytes += read
 
-                    withContext(Dispatchers.Main) {
-                        _status.value = UpdateStatus.Downloading(percent, downMb, totMb)
+                                val nowMs = System.currentTimeMillis()
+                                if (nowMs - lastProgressUpdateMs >= 100 || (totalBytes > 0 && downloadedBytes == totalBytes)) {
+                                    lastProgressUpdateMs = nowMs
+                                    val percent = if (totalBytes > 0) ((downloadedBytes * 100) / totalBytes).toInt() else 0
+                                    val downMb = downloadedBytes / (1024.0 * 1024.0)
+                                    val totMb = totalBytes / (1024.0 * 1024.0)
+
+                                    withContext(Dispatchers.Main) {
+                                        _status.value = UpdateStatus.Downloading(percent, downMb, totMb)
+                                    }
+                                }
+                            }
+                            outputStream.flush()
+                        }
                     }
                 }
-
-                outputStream.flush()
-                outputStream.close()
-                inputStream.close()
 
                 withContext(Dispatchers.Main) {
                     _status.value = UpdateStatus.ReadyToInstall(apkFile)
                     installApk(apkFile)
                 }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    _status.value = UpdateStatus.Error("Tải bản cập nhật thất bại: ${e.localizedMessage}")
+            } catch (e: Throwable) {
+                withContext(NonCancellable) {
+                    withContext(Dispatchers.Main) {
+                        if (e is CancellationException && downloadJob?.isCancelled == true) {
+                            _status.value = UpdateStatus.Idle
+                        } else {
+                            _status.value = UpdateStatus.Error("Tải bản cập nhật thất bại: ${e.localizedMessage}")
+                        }
+                    }
                 }
             }
         }
