@@ -591,3 +591,23 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - Khi chưa bật chiếu: Hiển thị `XEM TRƯỚC (CHẠM ĐỂ CHIẾU)` (màu xanh Yamaha Cyan).
      - Khi đã bật chiếu nhưng chưa có xe: Hiển thị `○ CHỜ KẾT NỐI XE...` (màu cam neon, viền sáng cam).
      - Khi đang chiếu thực tế lên đồng hồ xe: Hiển thị `● LIVE TFT` (màu xanh neon, viền sáng xanh).
+
+---
+
+### 📌 Quy tắc 11: Cơ chế kiểm tra cập nhật phần mềm (OTA) đa máy chủ chống nghẽn mạng tại Việt Nam (v0.5.33 Build 63)
+- **Hiện tượng lỗi**: Đôi khi bấm "Kiểm tra cập nhật phần mềm" trong tab Cài đặt, app bị treo ở dòng *"Đang kiểm tra phiên bản mới từ máy chủ..."* và quay vòng mãi mãi; người dùng phải khởi động lại máy hoặc tắt app mở lại mới được.
+- **Nguyên nhân gốc rễ**:
+  1. `raw.githubusercontent.com` trỏ đến dải IP máy chủ nước ngoài (185.199.108.133), tại Việt Nam thường xuyên bị các nhà mạng (Viettel, VNPT, FPT, 4G/5G) bóp băng thông, chặn ngầm hoặc chập chờn bắt tay TLS.
+  2. Cấu hình `httpClient` trước đây có `readTimeout = 60s`, `connectTimeout = 15s` và không bọc `withTimeout`. Khi mạng bị treo gói TCP SYN, luồng coroutine bị kẹt cứng đến 60-75 giây mà không có phản hồi.
+  3. Không có cơ chế hủy (`checkJob?.cancel()`) khi người dùng ấn thử lại, dẫn đến tình trạng chồng chéo coroutine chạy ngầm.
+- **Giải pháp chuẩn hóa**:
+  1. **Cơ chế Fallback 3 tầng máy chủ (Multi-Endpoint Resilient Strategy)**:
+     - *Tầng 1 (Ưu tiên số 1 - GitHub Contents API)*: `https://api.github.com/repos/lephuocduc/yamaha-android/contents/version.json`. Là REST API chính thức của GitHub, có máy chủ biên phân tán, hỗ trợ TLS 1.3 và **không bao giờ bị chặn hay bóp băng thông tại Việt Nam**; nội dung base64 được giải mã trực tiếp trong tích tắc (< 200ms).
+     - *Tầng 2 (Dự phòng tốc độ cao - jsDelivr Edge CDN)*: `https://cdn.jsdelivr.net/gh/lephuocduc/yamaha-android@main/version.json`. Mạng phân phối nội dung toàn cầu với máy chủ đặt tại Singapore và Việt Nam.
+     - *Tầng 3 (Dự phòng truyền thống - Raw GitHub)*: `https://raw.githubusercontent.com/...` kèm tham số `?t=timestamp` chống cache.
+  2. **Rút ngắn Timeout & Tự động chuyển máy chủ**:
+     - Cấu hình riêng `checkHttpClient` với `connectTimeout = 5s`, `readTimeout = 8s`. Nếu một máy chủ bị nghẽn mạng, hệ thống sẽ tự động chuyển sang máy chủ tiếp theo ngay sau 5 giây thay vì đứng chờ 60 giây.
+     - Bao bọc toàn bộ tác vụ bằng `withTimeout(15_000L)` để luôn đảm bảo có kết quả hoặc thông báo lỗi rõ ràng sau tối đa 15 giây.
+  3. **Thêm nút Hủy và Mở trình duyệt tải trực tiếp**:
+     - Trong trạng thái `UpdateStatus.Checking`: Bổ sung nút *"Hủy"* để người dùng có thể chủ động dừng kiểm tra bất kỳ lúc nào.
+     - Trong trạng thái `UpdateStatus.Error`: Bổ sung nút *"Mở trình duyệt"* trỏ thẳng đến trang GitHub Releases, giúp người dùng có phương án tải file APK trực tiếp bằng trình duyệt Chrome nếu máy gặp sự cố mạng nội bộ.

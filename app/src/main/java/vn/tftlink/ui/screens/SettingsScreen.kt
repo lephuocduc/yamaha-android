@@ -37,6 +37,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -73,6 +76,7 @@ import vn.tftlink.ui.theme.YamahaCyan
 
 @Composable
 fun SettingsScreen(viewModel: MainViewModel) {
+    val context = LocalContext.current
     val connectionState by viewModel.connectionState.collectAsState()
     val connectedBike by viewModel.connectedBike.collectAsState()
     val updateStatus by viewModel.updateStatus.collectAsState()
@@ -382,19 +386,23 @@ fun SettingsScreen(viewModel: MainViewModel) {
                                     .fillMaxWidth()
                                     .background(DarkBackground, RoundedCornerShape(8.dp))
                                     .padding(12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
+                                    modifier = Modifier.size(20.dp),
                                     strokeWidth = 2.dp,
                                     color = YamahaCyan
                                 )
                                 Text(
                                     text = "Đang kiểm tra phiên bản mới từ máy chủ...",
                                     color = TextPrimary,
-                                    fontSize = 13.sp
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f)
                                 )
+                                TextButton(onClick = { viewModel.resetUpdateStatus() }) {
+                                    Text("Hủy", color = TextSecondary, fontSize = 12.sp)
+                                }
                             }
                         }
 
@@ -666,7 +674,16 @@ fun SettingsScreen(viewModel: MainViewModel) {
                                     TextButton(onClick = { viewModel.checkForUpdate(silentIfUpToDate = false) }) {
                                         Text("Thử lại", color = YamahaCyan)
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    TextButton(onClick = {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(vn.tftlink.service.update.AppUpdateManager.FALLBACK_RELEASE_URL)).apply {
+                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        context.startActivity(intent)
+                                    }) {
+                                        Text("Mở trình duyệt", color = NeonOrange)
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     TextButton(onClick = { viewModel.resetUpdateStatus() }) {
                                         Text("Đóng", color = TextSecondary)
                                     }

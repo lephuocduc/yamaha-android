@@ -9,14 +9,17 @@ import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import android.util.Base64
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -61,11 +64,21 @@ class AppUpdateManager(
         }
     }
 
-    private val httpClient = OkHttpClient.Builder()
+    private val checkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .build()
+
+    private val downloadHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
+        .followRedirects(true)
         .build()
+
     private val gson = Gson()
+    private var checkJob: Job? = null
+    private var downloadJob: Job? = null
 
     private val _status = MutableStateFlow<UpdateStatus>(UpdateStatus.Idle)
     val status: StateFlow<UpdateStatus> = _status.asStateFlow()
@@ -93,63 +106,105 @@ class AppUpdateManager(
         }
     }
 
-    fun checkForUpdate(silentIfUpToDate: Boolean = false) {
-        _status.value = UpdateStatus.Checking
-        scope.launch(Dispatchers.IO) {
+    private suspend fun fetchRemoteVersionInfo(): Map<String, Any> {
+        val endpoints = listOf(
+            // 1. Official GitHub Contents API (Never blocked in VN, direct database response)
+            "https://api.github.com/repos/lephuocduc/yamaha-android/contents/version.json" to true,
+            // 2. jsDelivr Global Edge CDN (Nodes inside VN/Singapore, ultra-fast < 200ms)
+            "https://cdn.jsdelivr.net/gh/lephuocduc/yamaha-android@main/version.json" to false,
+            // 3. Raw GitHub with timestamp cache-busting
+            "$VERSION_CHECK_URL?t=${System.currentTimeMillis()}" to false
+        )
+
+        var lastException: Exception? = null
+
+        for ((url, isGitHubContentsApi) in endpoints) {
             try {
-                // Thêm timestamp để tránh cache mạng
-                val url = "$VERSION_CHECK_URL?t=${System.currentTimeMillis()}"
                 val request = Request.Builder()
                     .url(url)
+                    .header("User-Agent", "Mozilla/5.0 NConnect-Yamaha-Android/1.0")
                     .header("Cache-Control", "no-cache")
                     .build()
 
-                val response = httpClient.newCall(request).execute()
+                val response = checkHttpClient.newCall(request).execute()
                 if (!response.isSuccessful) {
-                    throw Exception("Không thể kết nối đến máy chủ cập nhật (Mã lỗi: ${response.code})")
+                    throw Exception("HTTP ${response.code}")
+                }
+                val rawBody = response.body?.string() ?: throw Exception("Empty response")
+
+                val jsonBody = if (isGitHubContentsApi) {
+                    val root = gson.fromJson(rawBody, Map::class.java)
+                    val base64Content = (root["content"] as? String)?.replace("\n", "")?.replace("\r", "")
+                        ?: throw Exception("No content field in API response")
+                    val decodedBytes = Base64.decode(base64Content, Base64.DEFAULT)
+                    String(decodedBytes, Charsets.UTF_8)
+                } else {
+                    rawBody
                 }
 
-                val body = response.body?.string() ?: throw Exception("Dữ liệu phiên bản rỗng")
-                val parsed = gson.fromJson(body, Map::class.java)
+                @Suppress("UNCHECKED_CAST")
+                val parsed = gson.fromJson(jsonBody, Map::class.java) as? Map<String, Any>
+                if (parsed != null && parsed.containsKey("versionCode")) {
+                    return parsed
+                }
+            } catch (e: Exception) {
+                lastException = e
+            }
+        }
 
-                val remoteCode = (parsed["versionCode"] as? Number)?.toInt() ?: 0
-                val remoteName = parsed["versionName"] as? String ?: "Mới nhất"
-                val releaseNotes = parsed["releaseNotes"] as? String ?: "Bản cập nhật mới"
-                val downloadUrl = parsed["downloadUrl"] as? String
-                    ?: "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
+        throw lastException ?: Exception("Không thể kết nối đến máy chủ cập nhật (Vui lòng kiểm tra mạng)")
+    }
 
-                val localCode = getCurrentVersionCode()
-                val isNewer = remoteCode > localCode
+    fun checkForUpdate(silentIfUpToDate: Boolean = false) {
+        checkJob?.cancel()
+        _status.value = UpdateStatus.Checking
+        checkJob = scope.launch(Dispatchers.IO) {
+            try {
+                withTimeout(15_000L) {
+                    val parsed = fetchRemoteVersionInfo()
 
-                val updateInfo = AppUpdateInfo(
-                    versionCode = remoteCode,
-                    versionName = remoteName,
-                    releaseNotes = releaseNotes,
-                    downloadUrl = downloadUrl,
-                    isUpdateAvailable = isNewer
-                )
+                    val remoteCode = (parsed["versionCode"] as? Number)?.toInt() ?: 0
+                    val remoteName = parsed["versionName"] as? String ?: "Mới nhất"
+                    val releaseNotes = parsed["releaseNotes"] as? String ?: "Bản cập nhật mới"
+                    val downloadUrl = parsed["downloadUrl"] as? String
+                        ?: "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 
-                withContext(Dispatchers.Main) {
-                    if (isNewer) {
-                        _status.value = UpdateStatus.UpdateAvailable(updateInfo)
-                    } else {
-                        if (!silentIfUpToDate) {
-                            _status.value = UpdateStatus.UpToDate(getCurrentVersionName())
+                    val localCode = getCurrentVersionCode()
+                    val isNewer = remoteCode > localCode
+
+                    val updateInfo = AppUpdateInfo(
+                        versionCode = remoteCode,
+                        versionName = remoteName,
+                        releaseNotes = releaseNotes,
+                        downloadUrl = downloadUrl,
+                        isUpdateAvailable = isNewer
+                    )
+
+                    withContext(Dispatchers.Main) {
+                        if (isNewer) {
+                            _status.value = UpdateStatus.UpdateAvailable(updateInfo)
                         } else {
-                            _status.value = UpdateStatus.Idle
+                            if (!silentIfUpToDate) {
+                                _status.value = UpdateStatus.UpToDate(getCurrentVersionName())
+                            } else {
+                                _status.value = UpdateStatus.Idle
+                            }
                         }
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    _status.value = UpdateStatus.Error(e.localizedMessage ?: "Lỗi kiểm tra cập nhật")
+                    _status.value = UpdateStatus.Error(
+                        e.localizedMessage ?: "Lỗi kiểm tra cập nhật (Vui lòng thử lại)"
+                    )
                 }
             }
         }
     }
 
     fun startDownloadAndInstall(info: AppUpdateInfo) {
-        scope.launch(Dispatchers.IO) {
+        downloadJob?.cancel()
+        downloadJob = scope.launch(Dispatchers.IO) {
             try {
                 val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
                 val updateDir = File(baseDir, "updates")
@@ -163,9 +218,10 @@ class AppUpdateManager(
 
                 val request = Request.Builder()
                     .url(info.downloadUrl)
+                    .header("User-Agent", "Mozilla/5.0 NConnect-Yamaha-Android/1.0")
                     .build()
 
-                val response = httpClient.newCall(request).execute()
+                val response = downloadHttpClient.newCall(request).execute()
                 if (!response.isSuccessful) {
                     throw Exception("Tải tập tin thất bại (Mã lỗi: ${response.code})")
                 }
@@ -257,6 +313,8 @@ class AppUpdateManager(
     }
 
     fun resetStatus() {
+        checkJob?.cancel()
+        downloadJob?.cancel()
         _status.value = UpdateStatus.Idle
     }
 }

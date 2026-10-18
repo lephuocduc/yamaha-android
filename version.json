@@ -1,6 +1,6 @@
 {
-  "versionCode": 62,
-  "versionName": "0.5.32",
-  "releaseNotes": "Sửa lỗi bản đồ nhỏ ở tab trang chủ cứ quay vòng load khi mở app: Luồng nạp ngói và dựng hình xem trước (preview loop) giờ đây tự động kích hoạt ngay khi mở ứng dụng với định vị GPS tức thời, hiển thị bản đồ trực tiếp kèm trạng thái 'XEM TRƯỚC (CHẠM ĐỂ CHIẾU)' rõ ràng, không còn bị quay vòng tải vô tận.",
+  "versionCode": 63,
+  "versionName": "0.5.33",
+  "releaseNotes": "Sửa triệt để lỗi kiểm tra cập nhật bị treo vô tận: Tích hợp cơ chế fallback đa máy chủ (GitHub Contents API, jsDelivr Edge CDN và Raw GitHub), rút ngắn timeout chống treo mạng ở Việt Nam, thêm nút Hủy khi đang kiểm tra và nút Mở trình duyệt tải trực tiếp nếu gặp lỗi mạng.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }
