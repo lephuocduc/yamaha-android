@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -717,9 +718,9 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                             Text("CHẨN ĐOÁN & NHẬT KÝ HỆ THỐNG", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Text("Xem và xuất log phục vụ gỡ lỗi & hỗ trợ kỹ thuật", color = TextSecondary, fontSize = 12.sp)
+                            Text("Xem và xuất log để gỡ lỗi", color = TextSecondary, fontSize = 12.sp)
                         }
                         Box(
                             modifier = Modifier
@@ -772,6 +773,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
                             onClick = { showLogDialog = true },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
                             border = BorderStroke(1.dp, YamahaCyan.copy(alpha = 0.5f))
                         ) {
                             Icon(
@@ -781,13 +783,14 @@ fun SettingsScreen(viewModel: MainViewModel) {
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Xem log", color = YamahaCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Xem log", color = YamahaCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                         }
 
                         OutlinedButton(
                             onClick = { viewModel.copyDiagnosticLogsToClipboard(context) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
                             border = BorderStroke(1.dp, DarkSurfaceBorder)
                         ) {
                             Icon(
@@ -797,24 +800,25 @@ fun SettingsScreen(viewModel: MainViewModel) {
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Sao chép", color = TextPrimary, fontSize = 12.sp)
+                            Text("Sao chép", color = TextPrimary, fontSize = 12.sp, maxLines = 1, softWrap = false)
                         }
+                    }
 
-                        Button(
-                            onClick = { viewModel.exportDiagnosticLogs(context) },
-                            modifier = Modifier.weight(1.2f),
-                            colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = null,
-                                tint = Color.Black,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Xuất file", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
+                    Button(
+                        onClick = { viewModel.exportDiagnosticLogs(context) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = null,
+                            tint = Color.Black,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Xuất / chia sẻ file log", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
                 }
             }
@@ -904,7 +908,8 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         text = "Nhật ký hệ thống & CCU",
                         color = YamahaCyan,
                         fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = { showLogDialog = false }) {
                         Icon(Icons.Default.Close, contentDescription = "Đóng", tint = TextSecondary)

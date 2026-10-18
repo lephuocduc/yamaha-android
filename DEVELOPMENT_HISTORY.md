@@ -727,3 +727,21 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - Hộp thoại xem chi tiết toàn bộ log (Thông tin máy, Android API, BLE CCU packets, GPS coordinates, lỗi lộ trình...).
      - Tích hợp 2 nút thao tác nhanh: **"Sao chép"** vào bộ nhớ tạm (Clipboard) và **"Xuất file"** kích hoạt Share Intent hệ thống.
 
+
+---
+
+### 📌 Quy tắc 15: Sửa địa chỉ Nhà/Cơ quan, danh sách 3 trạm xăng thật, vỡ layout Chẩn đoán & log Valhalla (v0.5.37 Build 67)
+- **Phản hồi người dùng**: (1) Không biết cách sửa địa chỉ nhà/công ty; (2) Nút trạm xăng nên hiện 3 trạm gần nhất; (3) Mục Chẩn đoán & Nhật ký bị vỡ layout; (4) Kiểm tra log.
+- **Phát hiện từ log & mã nguồn (đừng lặp lại các lỗi này)**:
+  1. **Dialog Nhà/Cơ quan cũ lưu SAI toạ độ**: `showEditPlaceDialog` luôn lưu `currentLoc` (vị trí GPS hiện tại) bất kể địa chỉ gõ gì -> "Cơ quan" trùng đúng vị trí người dùng (log: xuất phát (10.78345..) -> đích (10.78346..) 'Cơ quan'). Ô địa chỉ chỉ là chữ, KHÔNG được geocode. **Quy tắc**: mọi nơi lưu địa điểm phải có toạ độ lấy từ kết quả tìm kiếm (Photon) hoặc nút "Dùng vị trí hiện tại" -- cấm gán ngầm toạ độ GPS.
+  2. **Nút "Trạm xăng" dùng toạ độ GIẢ**: `LatLng(lat + 0.005, lon + 0.005)` đặt tên "Trạm Xăng Petrolimex" (log: đích = vị trí hiện tại + 0.005). Không phải trạm xăng thật. **Quy tắc**: không dùng toạ độ mẫu/hard-code cho dữ liệu POI.
+  3. **Photon hỗ trợ lọc POI**: `https://photon.komoot.io/api/?q=trạm xăng&lat=..&lon=..&osm_tag=amenity:fuel` trả đúng các trạm xăng OSM quanh vị trí (đã kiểm tra thực tế). Photon chỉ *ưu tiên* gần, không giới hạn bán kính => phải tự lọc <=15km và sắp xếp theo khoảng cách thật. Overpass API bị chặn/không ổn định trên một số mạng nên không dùng làm nguồn chính.
+  4. **Valhalla luôn "không phản hồi" ngay sau ~1 giây** (nhanh = lỗi HTTP, không phải timeout) nhưng code cũ nuốt hết lỗi (`catch (_: Exception)` + `return emptyList()`) nên không biết nguyên nhân. Đã sửa: ghi log `Valhalla[biến thể] HTTP <mã>: <nội dung>`, tự hạ cấp payload `motorcycle+options` -> `motorcycle` -> `motor_scooter`; 5xx/429/lỗi mạng thì dừng ngay (tránh chồng timeout). Fallback OSM Germany (xe hơi) vẫn hoạt động. **Quy tắc**: không bao giờ nuốt lỗi mạng im lặng; luôn ghi mã lỗi vào log chẩn đoán.
+  5. **Lộ trình điểm đến trùng vị trí hiện tại** (log: 'va', 'Cơ quan') vẫn gọi server và trả tuyến rỗng vô nghĩa. Đã thêm chặn < 30m kèm thông báo rõ ràng.
+  6. **Vỡ layout thẻ Chẩn đoán**: Row 3 nút `weight` có padding mặc định 24dp khiến chữ xuống dòng; cột tiêu đề không có `weight(1f)` nên đẩy badge. **Quy tắc**: nhiều nút trong một Row hẹp -> dùng `contentPadding` nhỏ, `maxLines = 1`, hoặc chia 2 hàng; Text cạnh icon/badge phải có `weight(1f)`.
+- **Giải pháp**:
+  - `MainDashboardScreen`: thẻ Về nhà/Đi làm có biểu tượng bút chì + nhấn giữ để sửa; dialog mới gõ địa chỉ -> gợi ý Photon -> chọn để lưu toạ độ thật (hoặc "Dùng vị trí hiện tại của tôi"); nút Lưu chỉ bật khi đã có toạ độ.
+  - Nút Trạm xăng mở dialog "Trạm xăng gần bạn": 3 trạm thật + khoảng cách, chạm để dẫn đường, nút "Tìm lại", có trạng thái đang tải / báo lỗi.
+  - `NavigationEngine.fetchNearbyGasStations(maxResults=3)` + `isFetchingGasStations` + `gasStationError`; `requestValhallaRoutes` có log & biến thể; `calculateRoute` chặn đích trùng vị trí.
+  - `SettingsScreen`: header `weight(1f)`, 2 nút Xem log/Sao chép một hàng (padding nhỏ, 1 dòng) + nút Xuất file full-width.
+- **Việc người dùng cần làm sau khi cập nhật**: vào lại Về nhà/Đi làm bấm bút chì để đặt lại địa chỉ (dữ liệu cũ đang lưu sai toạ độ).

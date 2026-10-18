@@ -93,6 +93,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isSearching: StateFlow<Boolean> = navEngine.isSearching
     val searchResults: StateFlow<List<SavedPlace>> = navEngine.searchResults
     val nearbyGasStations: StateFlow<List<SavedPlace>> = navEngine.nearbyGasStations
+    val isFetchingGasStations: StateFlow<Boolean> = navEngine.isFetchingGasStations
+    val gasStationError: StateFlow<String?> = navEngine.gasStationError
     val arrivalMessage: StateFlow<String?> = navEngine.arrivalMessage
     val isRerouting: StateFlow<Boolean> = navEngine.isRerouting
     val destinationTitle: StateFlow<String> = navEngine.destinationTitle
@@ -327,7 +329,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun fetchNearbyGasStations() {
-        navEngine.fetchNearbyGasStations()
+        navEngine.fetchNearbyGasStations(maxResults = 3)
     }
 
     fun calculateRoute(

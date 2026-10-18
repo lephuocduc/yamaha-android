@@ -3,6 +3,13 @@ package vn.tftlink.ui.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -114,6 +121,10 @@ fun MainDashboardScreen(
     var showScanDialog by remember { mutableStateOf(false) }
     var showAddFavDialog by remember { mutableStateOf(false) }
     var showEditPlaceDialog by remember { mutableStateOf<String?>(null) } // "home" or "work"
+    var showGasDialog by remember { mutableStateOf(false) }
+    val nearbyGas by viewModel.nearbyGasStations.collectAsState()
+    val isFetchingGas by viewModel.isFetchingGasStations.collectAsState()
+    val gasError by viewModel.gasStationError.collectAsState()
 
     LazyColumn(
         modifier = Modifier
@@ -278,12 +289,8 @@ fun MainDashboardScreen(
                     } ?: run { showEditPlaceDialog = "work" }
                 },
                 onFindGas = {
-                    currentLoc?.let {
-                        // Tìm trạm xăng gần nhất (khoảng cách mẫu 800m)
-                        val gasCoord = LatLng(it.latitude + 0.005, it.longitude + 0.005)
-                        viewModel.startNavigationTo(gasCoord, "Trạm Xăng Petrolimex")
-                        onNavigateToMapTab()
-                    }
+                    showGasDialog = true
+                    viewModel.fetchNearbyGasStations()
                 },
                 onEditHome = { showEditPlaceDialog = "home" },
                 onEditWork = { showEditPlaceDialog = "work" }
@@ -381,44 +388,141 @@ fun MainDashboardScreen(
         )
     }
 
-    // Dialog lưu Nhà / Cơ quan
+    // Dialog lưu Nhà / Cơ quan: nhập địa chỉ thật -> chọn gợi ý để lấy toạ độ đúng
     showEditPlaceDialog?.let { type ->
-        var nameInput by remember { mutableStateOf(if (type == "home") (homePlace?.name ?: "Nhà riêng") else (workPlace?.name ?: "Cơ quan")) }
-        var addressInput by remember { mutableStateOf(if (type == "home") (homePlace?.address ?: "") else (workPlace?.address ?: "")) }
+        val existing = if (type == "home") homePlace else workPlace
+        val defaultName = if (type == "home") "Nhà riêng" else "Cơ quan"
+        var nameInput by remember(type) { mutableStateOf(existing?.name ?: defaultName) }
+        var queryInput by remember(type) { mutableStateOf(existing?.address ?: "") }
+        var picked by remember(type) { mutableStateOf<SavedPlace?>(existing) }
+        val suggestions by viewModel.searchResults.collectAsState()
+        val isSearchingAddr by viewModel.isSearching.collectAsState()
+
+        // Chỉ tìm gợi ý khi người dùng đang gõ (chưa chọn kết quả nào)
+        LaunchedEffect(queryInput, picked) {
+            if (picked == null && queryInput.trim().length >= 3) {
+                viewModel.searchPlaces(queryInput)
+            } else {
+                viewModel.searchPlaces("")
+            }
+        }
+
+        fun closeDialog() {
+            viewModel.searchPlaces("")
+            showEditPlaceDialog = null
+        }
 
         AlertDialog(
-            onDismissRequest = { showEditPlaceDialog = null },
+            onDismissRequest = { closeDialog() },
             title = {
-                Text(if (type == "home") "Cài đặt địa chỉ Về Nhà" else "Cài đặt địa chỉ Đi Làm", color = TextPrimary)
+                Text(if (type == "home") "Địa chỉ Nhà" else "Địa chỉ Cơ quan", color = TextPrimary)
             },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     OutlinedTextField(
                         value = nameInput,
                         onValueChange = { nameInput = it },
-                        label = { Text("Tên địa điểm") },
+                        label = { Text("Tên hiển thị") },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = addressInput,
-                        onValueChange = { addressInput = it },
-                        label = { Text("Địa chỉ") },
+                        value = queryInput,
+                        onValueChange = {
+                            queryInput = it
+                            picked = null
+                        },
+                        label = { Text("Gõ địa chỉ để tìm (số nhà, đường, phường...)") },
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    if (picked != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                String.format(java.util.Locale.US, "Đã xác định toạ độ: %.5f, %.5f", picked!!.latitude, picked!!.longitude),
+                                color = NeonGreen,
+                                fontSize = 11.sp
+                            )
+                        }
+                    } else if (isSearchingAddr) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(color = YamahaCyan, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Đang tìm địa chỉ...", color = TextSecondary, fontSize = 11.sp)
+                        }
+                    } else if (queryInput.trim().length >= 3 && suggestions.isEmpty()) {
+                        Text("Không tìm thấy địa chỉ. Thử gõ ngắn hơn hoặc dùng vị trí hiện tại.", color = NeonOrange, fontSize = 11.sp)
+                    } else if (queryInput.isBlank()) {
+                        Text("Nhập địa chỉ rồi chọn một gợi ý bên dưới.", color = TextMuted, fontSize = 11.sp)
+                    }
+
+                    if (picked == null) {
+                        suggestions.take(5).forEach { place ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp)
+                                    .background(DarkSurfaceCard, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        picked = place
+                                        queryInput = listOf(place.name, place.address)
+                                            .filter { it.isNotBlank() }
+                                            .distinct()
+                                            .joinToString(", ")
+                                    }
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.LocationOn, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(place.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(place.address, color = TextSecondary, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = {
+                            currentLoc?.let { loc ->
+                                picked = SavedPlace(name = nameInput, address = "", latitude = loc.latitude, longitude = loc.longitude)
+                                queryInput = "Vị trí hiện tại"
+                                viewModel.reverseGeocode(loc) { _, address ->
+                                    if (address.isNotBlank()) queryInput = address
+                                }
+                            }
+                        },
+                        enabled = currentLoc != null,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, YamahaCyan.copy(alpha = 0.5f))
+                    ) {
+                        Icon(Icons.Default.MyLocation, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Dùng vị trí hiện tại của tôi", color = YamahaCyan, fontSize = 12.sp)
+                    }
                 }
             },
             confirmButton = {
                 Button(
+                    enabled = picked != null,
                     onClick = {
-                        val place = SavedPlace(
-                            name = nameInput,
-                            address = addressInput,
-                            latitude = currentLoc?.latitude ?: 10.7769,
-                            longitude = currentLoc?.longitude ?: 106.7009
-                        )
-                        if (type == "home") viewModel.setHomePlace(place) else viewModel.setWorkPlace(place)
-                        showEditPlaceDialog = null
+                        picked?.let { p ->
+                            val place = SavedPlace(
+                                name = nameInput.ifBlank { defaultName },
+                                address = queryInput,
+                                latitude = p.latitude,
+                                longitude = p.longitude
+                            )
+                            if (type == "home") viewModel.setHomePlace(place) else viewModel.setWorkPlace(place)
+                        }
+                        closeDialog()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan)
                 ) {
@@ -426,8 +530,97 @@ fun MainDashboardScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showEditPlaceDialog = null }) {
+                TextButton(onClick = { closeDialog() }) {
                     Text("Hủy", color = TextSecondary)
+                }
+            },
+            containerColor = DarkSurface
+        )
+    }
+
+    // Dialog 3 trạm xăng gần nhất
+    if (showGasDialog) {
+        AlertDialog(
+            onDismissRequest = { showGasDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.LocalGasStation, contentDescription = null, tint = NeonOrange)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Trạm xăng gần bạn", color = TextPrimary, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    when {
+                        isFetchingGas -> {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(color = NeonOrange, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text("Đang tìm trạm xăng gần nhất...", color = TextSecondary, fontSize = 13.sp)
+                            }
+                        }
+                        nearbyGas.isEmpty() -> {
+                            Text(gasError ?: "Chưa có dữ liệu trạm xăng.", color = NeonOrange, fontSize = 13.sp)
+                        }
+                        else -> {
+                            nearbyGas.forEachIndexed { index, station ->
+                                val distText = currentLoc?.let {
+                                    val d = GeoUtils.computeDistanceMeters(it, station.coordinate)
+                                    if (d < 1000) "${d.toInt()} m" else String.format(java.util.Locale.US, "%.1f km", d / 1000.0)
+                                } ?: ""
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .background(DarkSurfaceCard, RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            viewModel.startNavigationTo(station.coordinate, station.name)
+                                            showGasDialog = false
+                                            onNavigateToMapTab()
+                                        }
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .background(NeonOrange.copy(alpha = 0.2f), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("${index + 1}", color = NeonOrange, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(station.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (station.address.isNotBlank()) {
+                                            Text(station.address, color = TextSecondary, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        if (distText.isNotEmpty()) {
+                                            Text(distText, color = NeonOrange, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+                                        Icon(Icons.Default.Navigation, contentDescription = "Dẫn đường", tint = YamahaCyan, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.fetchNearbyGasStations() }, enabled = !isFetchingGas) {
+                    Text("Tìm lại", color = YamahaCyan)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGasDialog = false }) {
+                    Text("Đóng", color = TextSecondary)
                 }
             },
             containerColor = DarkSurface
@@ -958,19 +1151,21 @@ fun QuickActionsSection(
         QuickActionButton(
             modifier = Modifier.weight(1f),
             title = "Về nhà",
-            subtitle = homePlace?.name ?: "Cài đặt",
+            subtitle = homePlace?.name ?: "Chưa cài đặt",
             icon = Icons.Default.Home,
             color = NeonGreen,
-            onClick = onNavigateToHome
+            onClick = onNavigateToHome,
+            onEdit = onEditHome
         )
 
         QuickActionButton(
             modifier = Modifier.weight(1f),
             title = "Đi làm",
-            subtitle = workPlace?.name ?: "Cài đặt",
+            subtitle = workPlace?.name ?: "Chưa cài đặt",
             icon = Icons.Default.Work,
             color = YamahaCyan,
-            onClick = onNavigateToWork
+            onClick = onNavigateToWork,
+            onEdit = onEditWork
         )
 
         QuickActionButton(
@@ -984,6 +1179,7 @@ fun QuickActionsSection(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun QuickActionButton(
     modifier: Modifier = Modifier,
@@ -991,23 +1187,41 @@ fun QuickActionButton(
     subtitle: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     color: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onEdit: (() -> Unit)? = null
 ) {
     Card(
-        modifier = modifier.clickable { onClick() },
+        modifier = modifier.combinedClickable(onClick = onClick, onLongClick = onEdit),
         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
         border = BorderStroke(1.dp, DarkSurfaceBorder)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp, horizontal = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            Text(subtitle, color = TextSecondary, fontSize = 10.sp, maxLines = 1)
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp, horizontal = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(subtitle, color = TextSecondary, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (onEdit != null) {
+                IconButton(
+                    onClick = onEdit,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Sửa địa chỉ",
+                        tint = TextMuted,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
         }
     }
 }

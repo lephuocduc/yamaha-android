@@ -117,6 +117,12 @@ class NavigationEngine private constructor(
     private val _nearbyGasStations = MutableStateFlow<List<SavedPlace>>(emptyList())
     val nearbyGasStations: StateFlow<List<SavedPlace>> = _nearbyGasStations.asStateFlow()
 
+    private val _isFetchingGasStations = MutableStateFlow(false)
+    val isFetchingGasStations: StateFlow<Boolean> = _isFetchingGasStations.asStateFlow()
+
+    private val _gasStationError = MutableStateFlow<String?>(null)
+    val gasStationError: StateFlow<String?> = _gasStationError.asStateFlow()
+
     private val _arrivalMessage = MutableStateFlow<String?>(null)
     val arrivalMessage: StateFlow<String?> = _arrivalMessage.asStateFlow()
 
@@ -452,48 +458,75 @@ class NavigationEngine private constructor(
     }
 
     /**
-     * Tìm cây xăng lân cận (trong bán kính 8km)
+     * Tìm các cây xăng thật gần nhất (tối đa [maxResults]) bằng Photon với bộ lọc OSM `amenity=fuel`.
+     * Photon chỉ ưu tiên (bias) theo vị trí chứ không giới hạn cự ly, nên kết quả được lọc trong bán kính 15km
+     * rồi sắp xếp theo khoảng cách thực tế từ vị trí hiện tại.
      */
-    fun fetchNearbyGasStations() {
-        val loc = _currentLocation.value ?: return
+    fun fetchNearbyGasStations(maxResults: Int = 3) {
+        val loc = getEffectiveLocation()
+        _isFetchingGasStations.value = true
+        _gasStationError.value = null
+        _nearbyGasStations.value = emptyList()
+
         engineScope.launch(Dispatchers.IO) {
             try {
-                val url = "$PHOTON_URL/api/?q=petrol&lat=${loc.latitude}&lon=${loc.longitude}&limit=15"
-                val request = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", "NConnect-Yamaha-Android/1.0")
-                    .build()
+                val queries = listOf("tr%E1%BA%A1m%20x%C4%83ng", "c%C3%A2y%20x%C4%83ng", "petrol")
+                val unique = LinkedHashMap<String, SavedPlace>()
 
-                val response = httpClient.newCall(request).execute()
-                val body = response.use { resp -> if (resp.isSuccessful) resp.body?.string() ?: "" else "" }
-                val json = JSONObject(body)
-                val features = json.optJSONArray("features") ?: JSONArray()
-                val list = mutableListOf<SavedPlace>()
+                for (q in queries) {
+                    if (unique.size >= maxResults * 3) break
+                    try {
+                        val url = "$PHOTON_URL/api/?q=$q&lat=${loc.latitude}&lon=${loc.longitude}&limit=20&osm_tag=amenity:fuel"
+                        val request = Request.Builder()
+                            .url(url)
+                            .header("User-Agent", "NConnect-Yamaha-Android/1.0")
+                            .build()
+                        val body = httpClient.newCall(request).execute().use { resp ->
+                            if (resp.isSuccessful) resp.body?.string().orEmpty() else ""
+                        }
+                        if (body.isBlank()) continue
+                        val features = JSONObject(body).optJSONArray("features") ?: continue
+                        for (i in 0 until features.length()) {
+                            val f = features.getJSONObject(i)
+                            val coords = f.optJSONObject("geometry")?.optJSONArray("coordinates") ?: continue
+                            if (coords.length() < 2) continue
+                            val lon = coords.getDouble(0)
+                            val lat = coords.getDouble(1)
+                            val props = f.optJSONObject("properties") ?: JSONObject()
+                            val dist = GeoUtils.computeDistanceMeters(loc, LatLng(lat, lon))
+                            if (dist > 15_000) continue
 
-                for (i in 0 until features.length()) {
-                    val f = features.getJSONObject(i)
-                    val geom = f.optJSONObject("geometry") ?: continue
-                    val coords = geom.optJSONArray("coordinates") ?: continue
-                    val lon = coords.getDouble(0)
-                    val lat = coords.getDouble(1)
-                    val props = f.optJSONObject("properties") ?: JSONObject()
-                    val name = props.optString("name", "Cây xăng")
-                    val street = props.optString("street", "")
-                    val city = props.optString("city", "")
-                    val dist = GeoUtils.computeDistanceMeters(loc, LatLng(lat, lon))
-                    val distStr = if (dist < 1000) "Cách ${dist.toInt()} m" else String.format(Locale.US, "Cách %.1f km", dist / 1000.0)
-                    val addr = if (street.isNotBlank()) "$distStr • $street, $city" else "$distStr • $city"
-
-                    list.add(SavedPlace(name = name, address = addr, latitude = lat, longitude = lon))
+                            val key = "${props.optLong("osm_id", 0L)}_${"%.5f".format(Locale.US, lat)}_${"%.5f".format(Locale.US, lon)}"
+                            val name = props.optString("name", "").ifBlank { "Trạm xăng" }
+                            val housenumber = props.optString("housenumber", "")
+                            val street = props.optString("street", "")
+                            val district = props.optString("district", props.optString("locality", ""))
+                            val city = props.optString("city", "")
+                            val addr = listOf("$housenumber $street".trim(), district, city).filter { it.isNotBlank() }.joinToString(", ")
+                            unique.putIfAbsent(key, SavedPlace(name = name, address = addr, latitude = lat, longitude = lon))
+                        }
+                    } catch (e: Exception) {
+                        ccuManager?.log("Tìm trạm xăng (q=$q) lỗi: ${e.javaClass.simpleName}: ${e.message}")
+                    }
                 }
 
-                // Sắp xếp theo cự ly gần nhất
-                val sorted = list.sortedBy { GeoUtils.computeDistanceMeters(loc, it.coordinate) }
+                val nearest = unique.values
+                    .sortedBy { GeoUtils.computeDistanceMeters(loc, it.coordinate) }
+                    .take(maxResults)
+                ccuManager?.log("Tìm trạm xăng: ${nearest.size} kết quả gần (${loc.latitude}, ${loc.longitude})")
 
                 withContext(Dispatchers.Main) {
-                    _nearbyGasStations.value = sorted
+                    _nearbyGasStations.value = nearest
+                    _gasStationError.value = if (nearest.isEmpty()) "Không tìm thấy trạm xăng nào trong bán kính 15 km. Kiểm tra kết nối mạng rồi thử lại." else null
+                    _isFetchingGasStations.value = false
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                ccuManager?.log("Tìm trạm xăng thất bại: ${e.javaClass.simpleName}: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    _gasStationError.value = "Không thể tìm trạm xăng. Kiểm tra kết nối mạng rồi thử lại."
+                    _isFetchingGasStations.value = false
+                }
+            }
         }
     }
 
@@ -510,6 +543,12 @@ class NavigationEngine private constructor(
         val start = if (origin != null && isValidCoordinate(origin)) origin else getEffectiveLocation()
         if (!isValidCoordinate(destination)) {
             _routeErrorMessage.value = "Toạ độ đích không hợp lệ."
+            return
+        }
+
+        if (intermediateStops.isEmpty() && GeoUtils.computeDistanceMeters(start, destination) < 30.0) {
+            ccuManager?.log("Bỏ qua lập lộ trình: điểm đến '$destinationTitle' trùng vị trí hiện tại (<30m).")
+            _routeErrorMessage.value = "Điểm đến '$destinationTitle' trùng với vị trí hiện tại của bạn. Hãy kiểm tra lại địa chỉ đã lưu."
             return
         }
 
@@ -555,52 +594,83 @@ class NavigationEngine private constructor(
         stops: List<LatLng>,
         destination: LatLng
     ): List<OSMRoute> = withContext(Dispatchers.IO) {
-        try {
-            val url = "$VALHALLA_DEFAULT_URL/route"
-            val locationsArray = JSONArray()
-            locationsArray.put(JSONObject().put("lat", start.latitude).put("lon", start.longitude).put("type", "break"))
-            for (stop in stops) {
-                locationsArray.put(JSONObject().put("lat", stop.latitude).put("lon", stop.longitude).put("type", "break"))
-            }
-            locationsArray.put(JSONObject().put("lat", destination.latitude).put("lon", destination.longitude).put("type", "break"))
-
-            val motorcycleOptions = JSONObject().apply {
-                put("use_highways", 0.0) // Tránh cao tốc cấm xe máy ở Việt Nam
-                put("use_primary", 0.9)  // Ưu tiên đường lớn, đại lộ
-                put("use_tolls", 0.0)    // Tránh trạm thu phí
-                put("use_trails", 0.0)   // Tránh đường mòn
-                put("alley_factor", 3.0) // Giảm alley_factor để không bị nghẽn ngõ hẻm
-                put("top_speed", 65)     // Giới hạn tốc độ xe máy
-            }
-
-            val payload = JSONObject().apply {
-                put("locations", locationsArray)
-                put("costing", "motorcycle")
-                put("costing_options", JSONObject().put("motorcycle", motorcycleOptions))
-                put("alternates", if (stops.isEmpty()) 2 else 0)
-                put("directions_options", JSONObject().apply {
-                    put("units", "kilometers")
-                    put("language", "vi-VN")
-                })
-            }
-
-            val requestBody = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-            val request = Request.Builder()
-                .url(url)
-                .post(requestBody)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) NConnect-Yamaha-Android/1.0")
-                .header("Accept", "application/json")
-                .build()
-
-            val response = httpClient.newCall(request).execute()
-            response.use { resp ->
-                if (!resp.isSuccessful) return@withContext emptyList()
-                val body = resp.body?.string() ?: return@withContext emptyList()
-                parseValhallaRoutes(body)
-            }
-        } catch (_: Exception) {
-            emptyList()
+        val url = "$VALHALLA_DEFAULT_URL/route"
+        val locationsArray = JSONArray()
+        locationsArray.put(JSONObject().put("lat", start.latitude).put("lon", start.longitude).put("type", "break"))
+        for (stop in stops) {
+            locationsArray.put(JSONObject().put("lat", stop.latitude).put("lon", stop.longitude).put("type", "break"))
         }
+        locationsArray.put(JSONObject().put("lat", destination.latitude).put("lon", destination.longitude).put("type", "break"))
+
+        // Các biến thể payload từ đầy đủ -> tối giản. Máy chủ công cộng có thể từ chối costing_options/language
+        // (HTTP 400) nên tự động hạ cấp thay vì bỏ cuộc ngay.
+        data class Variant(val label: String, val build: () -> JSONObject)
+        val variants = listOf(
+            Variant("motorcycle+options") {
+                JSONObject().apply {
+                    put("locations", locationsArray)
+                    put("costing", "motorcycle")
+                    put("costing_options", JSONObject().put("motorcycle", JSONObject().apply {
+                        put("use_highways", 0.0) // Tránh cao tốc cấm xe máy ở Việt Nam
+                        put("use_primary", 0.9)  // Ưu tiên đường lớn, đại lộ
+                        put("use_tolls", 0.0)    // Tránh trạm thu phí
+                        put("use_trails", 0.0)   // Tránh đường mòn
+                    }))
+                    put("alternates", if (stops.isEmpty()) 2 else 0)
+                    put("directions_options", JSONObject().put("units", "kilometers").put("language", "vi-VN"))
+                }
+            },
+            Variant("motorcycle") {
+                JSONObject().apply {
+                    put("locations", locationsArray)
+                    put("costing", "motorcycle")
+                    put("directions_options", JSONObject().put("units", "kilometers"))
+                }
+            },
+            Variant("motor_scooter") {
+                JSONObject().apply {
+                    put("locations", locationsArray)
+                    put("costing", "motor_scooter")
+                    put("directions_options", JSONObject().put("units", "kilometers"))
+                }
+            }
+        )
+
+        for (variant in variants) {
+            try {
+                val requestBody = variant.build().toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) NConnect-Yamaha-Android/1.0")
+                    .header("Accept", "application/json")
+                    .build()
+
+                val outcome: Pair<Int, String> = httpClient.newCall(request).execute().use { resp ->
+                    resp.code to (resp.body?.string().orEmpty())
+                }
+                val (code, body) = outcome
+                if (code in 200..299 && body.isNotBlank()) {
+                    val parsed = try { parseValhallaRoutes(body) } catch (e: Exception) {
+                        ccuManager?.log("Valhalla[${variant.label}] lỗi phân tích JSON: ${e.message}")
+                        emptyList()
+                    }
+                    if (parsed.isNotEmpty()) {
+                        ccuManager?.log("Valhalla[${variant.label}] OK")
+                        return@withContext parsed
+                    }
+                    ccuManager?.log("Valhalla[${variant.label}] HTTP $code nhưng không có tuyến.")
+                } else {
+                    ccuManager?.log("Valhalla[${variant.label}] HTTP $code: ${body.take(160).replace('\n', ' ')}")
+                    // 5xx / 429 là sự cố máy chủ: thử biến thể khác cũng vô ích
+                    if (code >= 500 || code == 429) return@withContext emptyList()
+                }
+            } catch (e: Exception) {
+                ccuManager?.log("Valhalla[${variant.label}] lỗi mạng: ${e.javaClass.simpleName}: ${e.message}")
+                return@withContext emptyList()
+            }
+        }
+        emptyList()
     }
 
     private fun parseValhallaRoutes(jsonStr: String): List<OSMRoute> {
