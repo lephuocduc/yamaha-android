@@ -77,8 +77,8 @@ class BikeForegroundService : Service() {
         createNotificationChannel()
 
         ccuManager = YamahaCCUManager.getInstance(applicationContext, serviceScope)
-        navEngine = NavigationEngine.getInstance(applicationContext, serviceScope)
-        tripManager = TripHistoryManager.getInstance(applicationContext, serviceScope)
+        navEngine = NavigationEngine.getInstance(applicationContext)
+        tripManager = TripHistoryManager.getInstance(applicationContext)
         parkingManager = ParkingLocationManager.getInstance(applicationContext, serviceScope)
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)

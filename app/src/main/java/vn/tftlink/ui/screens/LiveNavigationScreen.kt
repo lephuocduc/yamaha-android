@@ -117,6 +117,12 @@ import vn.tftlink.ui.theme.TextMuted
 import vn.tftlink.ui.theme.TextPrimary
 import vn.tftlink.ui.theme.TextSecondary
 import vn.tftlink.ui.theme.YamahaCyan
+import androidx.core.content.ContextCompat
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
+import android.widget.Toast
+import androidx.compose.material.icons.filled.BookmarkAdd
+import vn.tftlink.R
 
 private val GoogleTrafficTileSource = object : OnlineTileSourceBase(
     "GoogleTraffic",
@@ -180,7 +186,6 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
     val connectionState by viewModel.connectionState.collectAsState()
     val isBikeConnected = connectionState == BikeConnectionState.CONNECTED
 
-    var showMiniPreview by remember { mutableStateOf(true) }
     var isSearchFocused by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var mapStyle by remember { mutableStateOf("traffic") } // "traffic", "satellite", "osm"
@@ -269,6 +274,8 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                             isSearchFocused = false
                             val latLng = LatLng(p.latitude, p.longitude)
                             droppedPin = latLng
+                            droppedPinTitle = "Đang lấy địa chỉ..."
+                            droppedPinAddress = String.format(java.util.Locale.US, "%.5f, %.5f", p.latitude, p.longitude)
                             viewModel.reverseGeocode(latLng) { title, address ->
                                 droppedPinTitle = title
                                 droppedPinAddress = address
@@ -328,18 +335,20 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                             position = GeoPoint(dest.latitude, dest.longitude)
                             title = destinationTitle
                             snippet = instruction.nextRoadName
+                            icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_marker_google_pin)
                             setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
                         }
                         mapView.overlays.add(marker)
                     }
                 }
 
-                // Dropped Pin Marker
+                // Dropped Pin Marker (Google Maps Red Teardrop Pin)
                 droppedPin?.let { pin ->
                     val marker = OsmMarker(mapView).apply {
                         position = GeoPoint(pin.latitude, pin.longitude)
                         title = droppedPinTitle
                         snippet = droppedPinAddress
+                        icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_marker_google_pin)
                         setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
                     }
                     mapView.overlays.add(marker)
@@ -351,16 +360,18 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                         position = GeoPoint(parked.coordinate.latitude, parked.coordinate.longitude)
                         title = "Vị trí đỗ xe (${parked.bikeName})"
                         snippet = parked.relativeTimeString
+                        icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_marker_parked_bike)
                         setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
                     }
                     mapView.overlays.add(marker)
                 }
 
-                // Current User Location Marker with Direction
+                // Current User Location Marker with Direction Puck
                 currentLoc?.let { loc ->
                     val userMarker = OsmMarker(mapView).apply {
                         position = GeoPoint(loc.latitude, loc.longitude)
                         title = "Vị trí của bạn"
+                        icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_marker_user_puck)
                         setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_CENTER)
                         rotation = if (isNorthUp) 0f else heading
                     }
@@ -719,26 +730,76 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(droppedPinTitle, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_marker_google_pin),
+                                contentDescription = null,
+                                tint = Color.Unspecified,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    droppedPinTitle,
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (droppedPinAddress.isNotBlank()) {
+                                    Text(
+                                        droppedPinAddress,
+                                        color = TextSecondary,
+                                        fontSize = 12.sp,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
                         IconButton(onClick = { droppedPin = null }, modifier = Modifier.size(24.dp)) {
                             Icon(Icons.Default.Close, contentDescription = null, tint = TextSecondary)
                         }
                     }
-                    if (droppedPinAddress.isNotBlank()) {
-                        Text(droppedPinAddress, color = TextSecondary, fontSize = 12.sp)
-                    }
-                    Button(
-                        onClick = {
-                            viewModel.calculateRoute(pin, droppedPinTitle, autoStart = false)
-                            droppedPin = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan),
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Directions, contentDescription = null, tint = Color.Black)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Dẫn đường đến điểm này", color = Color.Black, fontWeight = FontWeight.Bold)
+                        OutlinedButton(
+                            onClick = {
+                                val favName = if (droppedPinTitle != "Điểm đã ghim" && droppedPinTitle != "Đang lấy địa chỉ...") droppedPinTitle else "Điểm ghim (${String.format(java.util.Locale.US, "%.3f, %.3f", pin.latitude, pin.longitude)})"
+                                val favPlace = SavedPlace(
+                                    name = favName,
+                                    address = droppedPinAddress,
+                                    latitude = pin.latitude,
+                                    longitude = pin.longitude
+                                )
+                                viewModel.addFavoritePlace(favPlace)
+                                Toast.makeText(context, "Đã thêm vào mục Yêu thích", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, YamahaCyan.copy(alpha = 0.6f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = YamahaCyan)
+                        ) {
+                            Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Yêu thích", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Button(
+                            onClick = {
+                                viewModel.calculateRoute(pin, droppedPinTitle, autoStart = false)
+                                droppedPin = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan),
+                            modifier = Modifier.weight(1.5f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.Directions, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Dẫn đường", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
                     }
                 }
             }
@@ -975,55 +1036,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
             }
         }
 
-        // 6. Mini TFT Mirror Card (Bottom Left)
-        if (showMiniPreview && !isNavigating && activeRoute == null && droppedPin == null && !isCalculatingRoute) {
-            Card(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 16.dp, bottom = 16.dp)
-                    .width(160.dp)
-                    .aspectRatio(480f / 234f)
-                    .clip(RoundedCornerShape(8.dp))
-                    .border(1.dp, if (isStreaming) NeonGreen else YamahaCyan.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                    .clickable { viewModel.toggleStreaming() },
-                colors = CardDefaults.cardColors(containerColor = Color.Black)
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    if (lastFrameBitmap != null) {
-                        Image(
-                            bitmap = lastFrameBitmap!!.asImageBitmap(),
-                            contentDescription = "TFT Stream",
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Text(
-                            "TFT Mirror",
-                            color = TextSecondary,
-                            fontSize = 10.sp,
-                            modifier = Modifier.align(Alignment.Center)
-                        )
-                    }
-                    Text(
-                        text = when {
-                            isStreaming && isBikeConnected -> "LIVE TFT"
-                            isStreaming && !isBikeConnected -> "CHỜ XE..."
-                            else -> "XEM TRƯỚC"
-                        },
-                        color = when {
-                            isStreaming && isBikeConnected -> NeonGreen
-                            isStreaming && !isBikeConnected -> NeonOrange
-                            else -> TextMuted
-                        },
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .background(Color.Black.copy(alpha = 0.7f))
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
+
     }
 }
 

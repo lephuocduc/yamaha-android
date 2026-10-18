@@ -39,28 +39,40 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
-class NavigationEngine(
-    private val context: Context,
-    private val scope: CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+
+class NavigationEngine private constructor(
+    private val context: Context
 ) {
     companion object {
         const val VALHALLA_DEFAULT_URL = "https://valhalla1.openstreetmap.de"
+        const val OSM_ROUTING_DE_URL = "https://routing.openstreetmap.de/routed-car"
         const val OSRM_DEFAULT_URL = "https://router.project-osrm.org"
-        const val PHOTON_URL = "https://photon.komoot.io/api/"
+        const val OSRM_FALLBACK_HTTP_URL = "http://router.project-osrm.org"
+        const val PHOTON_URL = "https://photon.komoot.io"
 
         @Volatile
         private var instance: NavigationEngine? = null
 
-        fun getInstance(context: Context, scope: CoroutineScope): NavigationEngine {
+        fun getInstance(context: Context): NavigationEngine {
             return instance ?: synchronized(this) {
-                instance ?: NavigationEngine(context.applicationContext, scope).also { instance = it }
+                instance ?: NavigationEngine(context.applicationContext).also { instance = it }
             }
+        }
+
+        @Suppress("UNUSED_PARAMETER")
+        fun getInstance(context: Context, scope: CoroutineScope): NavigationEngine {
+            return getInstance(context)
         }
     }
 
+    private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .followRedirects(true)
         .build()
     private val gson = Gson()
 
@@ -147,27 +159,41 @@ class NavigationEngine(
         restoreLastKnownLocation()
     }
 
+    fun isValidCoordinate(loc: LatLng?): Boolean {
+        if (loc == null) return false
+        return loc.latitude != 0.0 && loc.longitude != 0.0 &&
+                loc.latitude in -90.0..90.0 &&
+                loc.longitude in -180.0..180.0
+    }
+
     private fun restoreLastKnownLocation() {
         try {
             val prefs = context.getSharedPreferences("nav_engine_prefs", Context.MODE_PRIVATE)
             val lat = prefs.getString("last_lat", null)?.toDoubleOrNull()
             val lng = prefs.getString("last_lng", null)?.toDoubleOrNull()
             if (lat != null && lng != null) {
-                _currentLocation.value = LatLng(lat, lng)
+                val loc = LatLng(lat, lng)
+                if (isValidCoordinate(loc)) {
+                    _currentLocation.value = loc
+                }
             }
         } catch (_: Exception) {}
     }
 
     fun getEffectiveLocation(): LatLng {
-        _currentLocation.value?.let { return it }
+        _currentLocation.value?.let {
+            if (isValidCoordinate(it)) return it
+        }
         try {
             val prefs = context.getSharedPreferences("nav_engine_prefs", Context.MODE_PRIVATE)
             val lat = prefs.getString("last_lat", null)?.toDoubleOrNull()
             val lng = prefs.getString("last_lng", null)?.toDoubleOrNull()
             if (lat != null && lng != null) {
                 val loc = LatLng(lat, lng)
-                _currentLocation.value = loc
-                return loc
+                if (isValidCoordinate(loc)) {
+                    _currentLocation.value = loc
+                    return loc
+                }
             }
         } catch (_: Exception) {}
 
@@ -179,8 +205,10 @@ class NavigationEngine(
                 val l = locMgr?.getLastKnownLocation(p)
                 if (l != null) {
                     val loc = LatLng(l.latitude, l.longitude)
-                    _currentLocation.value = loc
-                    return loc
+                    if (isValidCoordinate(loc)) {
+                        _currentLocation.value = loc
+                        return loc
+                    }
                 }
             }
         } catch (_: Exception) {}
@@ -209,6 +237,7 @@ class NavigationEngine(
     }
 
     fun updateLocation(latLng: LatLng, speedKmh: Double = 0.0, heading: Float = 0f) {
+        if (!isValidCoordinate(latLng)) return
         _currentLocation.value = latLng
         _currentSpeedKmh.value = speedKmh
         _currentHeading.value = heading
@@ -240,13 +269,13 @@ class NavigationEngine(
         }
 
         _isSearching.value = true
-        searchJob = scope.launch(Dispatchers.IO) {
+        searchJob = engineScope.launch(Dispatchers.IO) {
             delay(200) // Debounce
             try {
                 // Photon and Nominatim expect %20 for spaces in query string
                 val encoded = URLEncoder.encode(trimmed, "UTF-8").replace("+", "%20")
                 val userLoc = _currentLocation.value ?: LatLng(10.7769, 106.7009)
-                var urlStr = "$PHOTON_URL?q=$encoded&limit=15&lat=${userLoc.latitude}&lon=${userLoc.longitude}"
+                val urlStr = "$PHOTON_URL/api/?q=$encoded&limit=15&lat=${userLoc.latitude}&lon=${userLoc.longitude}"
 
                 val request = Request.Builder()
                     .url(urlStr)
@@ -254,7 +283,7 @@ class NavigationEngine(
                     .build()
 
                 val response = httpClient.newCall(request).execute()
-                val body = if (response.isSuccessful) response.body?.string() ?: "" else ""
+                val body = response.use { resp -> if (resp.isSuccessful) resp.body?.string() ?: "" else "" }
                 val items = mutableListOf<SavedPlace>()
 
                 if (body.isNotBlank()) {
@@ -315,7 +344,7 @@ class NavigationEngine(
                     .build()
 
                 val response = httpClient.newCall(request).execute()
-                val body = response.body?.string() ?: ""
+                val body = response.use { resp -> if (resp.isSuccessful) resp.body?.string() ?: "" else "" }
                 val array = JSONArray(body)
                 val items = mutableListOf<SavedPlace>()
 
@@ -345,46 +374,75 @@ class NavigationEngine(
     }
 
     /**
-     * Tra cứu địa chỉ từ toạ độ (Reverse Geocode)
+     * Tra cứu địa chỉ từ toạ độ (Reverse Geocode) bằng Photon OSM và Android Geocoder
      */
     fun reverseGeocode(latLng: LatLng, onResult: (title: String, address: String) -> Unit) {
-        scope.launch(Dispatchers.IO) {
+        engineScope.launch(Dispatchers.IO) {
             var title = "Vị trí đã chọn"
             var address = String.format(Locale.US, "%.5f, %.5f", latLng.latitude, latLng.longitude)
 
-            // 1. Thử Android Geocoder
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                try {
-                    val geocoder = Geocoder(context, Locale("vi", "VN"))
-                    val list = geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1)
-                    if (!list.isNullOrEmpty()) {
-                        val p = list[0]
-                        title = p.featureName ?: p.thoroughfare ?: title
-                        val parts = listOfNotNull(p.subThoroughfare, p.thoroughfare, p.subLocality, p.locality, p.adminArea)
-                        if (parts.isNotEmpty()) address = parts.joinToString(", ")
-                        withContext(Dispatchers.Main) { onResult(title, address) }
-                        return@launch
-                    }
-                } catch (_: Exception) {}
-            }
-
-            // 2. Dự phòng OSM Nominatim
+            // 1. Thử Photon OpenStreetMap Reverse Geocoder (nhanh, chính xác, không giới hạn IP)
             try {
-                val url = "https://nominatim.openstreetmap.org/reverse?format=json&lat=${latLng.latitude}&lon=${latLng.longitude}&zoom=18&addressdetails=1&accept-language=vi"
+                val url = "$PHOTON_URL/reverse?lat=${latLng.latitude}&lon=${latLng.longitude}"
                 val request = Request.Builder()
                     .url(url)
-                    .header("User-Agent", "NConnect-Yamaha-Android/1.0")
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) NConnect-Yamaha/1.0")
                     .build()
                 val response = httpClient.newCall(request).execute()
-                val body = response.body?.string() ?: ""
-                val json = JSONObject(body)
-                val displayName = json.optString("display_name", "")
-                val addrObj = json.optJSONObject("address")
-                val road = addrObj?.optString("road", "")
-                val name = json.optString("name", "")
+                response.use { resp ->
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.string() ?: ""
+                        val json = JSONObject(body)
+                        val features = json.optJSONArray("features")
+                        if (features != null && features.length() > 0) {
+                            val props = features.getJSONObject(0).optJSONObject("properties")
+                            if (props != null) {
+                                val name = props.optString("name", "")
+                                val street = props.optString("street", "")
+                                val housenumber = props.optString("housenumber", "")
+                                val district = props.optString("district", props.optString("county", props.optString("locality", "")))
+                                val city = props.optString("city", props.optString("state", "Việt Nam"))
 
-                title = if (name.isNotBlank()) name else if (!road.isNullOrBlank()) road else displayName.split(",").firstOrNull() ?: title
-                if (displayName.isNotBlank()) address = displayName
+                                val streetPart = if (housenumber.isNotBlank() && street.isNotBlank()) "$housenumber $street" else if (street.isNotBlank()) street else ""
+                                val cleanTitle = when {
+                                    name.isNotBlank() -> name
+                                    streetPart.isNotBlank() -> streetPart
+                                    district.isNotBlank() -> district
+                                    city.isNotBlank() -> city
+                                    else -> "Điểm đã ghim"
+                                }
+                                title = cleanTitle
+
+                                val addrParts = listOfNotNull(
+                                    if (name.isNotBlank() && name != streetPart) name else null,
+                                    streetPart.ifBlank { null },
+                                    district.ifBlank { null },
+                                    city.ifBlank { null }
+                                )
+                                if (addrParts.isNotEmpty()) {
+                                    address = addrParts.joinToString(", ")
+                                }
+                                withContext(Dispatchers.Main) { onResult(title, address) }
+                                return@launch
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // 2. Thử Android Geocoder
+            try {
+                val geocoder = Geocoder(context, Locale("vi", "VN"))
+                @Suppress("DEPRECATION")
+                val list = geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1)
+                if (!list.isNullOrEmpty()) {
+                    val p = list[0]
+                    title = p.featureName ?: p.thoroughfare ?: title
+                    val parts = listOfNotNull(p.subThoroughfare, p.thoroughfare, p.subLocality, p.locality, p.adminArea)
+                    if (parts.isNotEmpty()) address = parts.joinToString(", ")
+                    withContext(Dispatchers.Main) { onResult(title, address) }
+                    return@launch
+                }
             } catch (_: Exception) {}
 
             withContext(Dispatchers.Main) {
@@ -398,16 +456,16 @@ class NavigationEngine(
      */
     fun fetchNearbyGasStations() {
         val loc = _currentLocation.value ?: return
-        scope.launch(Dispatchers.IO) {
+        engineScope.launch(Dispatchers.IO) {
             try {
-                val url = "$PHOTON_URL?q=petrol&lat=${loc.latitude}&lon=${loc.longitude}&limit=15&lang=vi"
+                val url = "$PHOTON_URL/api/?q=petrol&lat=${loc.latitude}&lon=${loc.longitude}&limit=15"
                 val request = Request.Builder()
                     .url(url)
                     .header("User-Agent", "NConnect-Yamaha-Android/1.0")
                     .build()
 
                 val response = httpClient.newCall(request).execute()
-                val body = response.body?.string() ?: ""
+                val body = response.use { resp -> if (resp.isSuccessful) resp.body?.string() ?: "" else "" }
                 val json = JSONObject(body)
                 val features = json.optJSONArray("features") ?: JSONArray()
                 val list = mutableListOf<SavedPlace>()
@@ -449,7 +507,11 @@ class NavigationEngine(
         destinationTitle: String = "Điểm đến",
         autoStart: Boolean = false
     ) {
-        val start = origin ?: getEffectiveLocation()
+        val start = if (origin != null && isValidCoordinate(origin)) origin else getEffectiveLocation()
+        if (!isValidCoordinate(destination)) {
+            _routeErrorMessage.value = "Toạ độ đích không hợp lệ."
+            return
+        }
 
         this.destinationCoordinate = destination
         this.intermediateStops = intermediateStops
@@ -459,20 +521,30 @@ class NavigationEngine(
         _alternativeRoutes.value = emptyList()
         _allCalculatedRoutes.value = emptyList()
 
-        scope.launch(Dispatchers.IO) {
-            val routes = requestValhallaRoutes(start, intermediateStops, destination)
-            val finalRoutes = if (routes.isNotEmpty()) {
-                routes
+        engineScope.launch(Dispatchers.IO) {
+            ccuManager?.log("Bắt đầu lập lộ trình: (${start.latitude}, ${start.longitude}) -> (${destination.latitude}, ${destination.longitude}) '$destinationTitle'")
+
+            // 1. Thử Valhalla Motorcycle Routing
+            var routes = requestValhallaRoutes(start, intermediateStops, destination)
+            if (routes.isNotEmpty()) {
+                ccuManager?.log("Valhalla thành công: ${routes.size} tuyến đường.")
             } else {
-                requestOSRMRoutes(start, destination)
+                ccuManager?.log("Valhalla không phản hồi, thử OSRM Routing Germany...")
+                // 2. Dự phòng: OSRM Routing
+                routes = requestOSRMRoutes(start, destination)
+                if (routes.isNotEmpty()) {
+                    ccuManager?.log("OSRM thành công: ${routes.size} tuyến đường.")
+                } else {
+                    ccuManager?.log("Lỗi: Cả Valhalla và OSRM đều không tìm thấy đường đi.")
+                }
             }
 
             withContext(Dispatchers.Main) {
                 _isCalculatingRoute.value = false
-                if (finalRoutes.isNotEmpty()) {
-                    applyCalculatedRoutes(finalRoutes, autoStart)
+                if (routes.isNotEmpty()) {
+                    applyCalculatedRoutes(routes, autoStart)
                 } else {
-                    _routeErrorMessage.value = "Không thể tìm thấy lộ trình đến '$destinationTitle'. Vui lòng kiểm tra lại kết nối mạng."
+                    _routeErrorMessage.value = "Không thể tìm thấy lộ trình đến '$destinationTitle'. Vui lòng kiểm tra lại kết nối mạng hoặc chọn vị trí khác."
                 }
             }
         }
@@ -497,7 +569,7 @@ class NavigationEngine(
                 put("use_primary", 0.9)  // Ưu tiên đường lớn, đại lộ
                 put("use_tolls", 0.0)    // Tránh trạm thu phí
                 put("use_trails", 0.0)   // Tránh đường mòn
-                put("alley_factor", 5.0) // Tránh hẻm nhỏ
+                put("alley_factor", 3.0) // Giảm alley_factor để không bị nghẽn ngõ hẻm
                 put("top_speed", 65)     // Giới hạn tốc độ xe máy
             }
 
@@ -516,14 +588,16 @@ class NavigationEngine(
             val request = Request.Builder()
                 .url(url)
                 .post(requestBody)
-                .header("User-Agent", "NConnect-Yamaha-Android/1.0")
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) NConnect-Yamaha-Android/1.0")
+                .header("Accept", "application/json")
                 .build()
 
             val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext emptyList()
-
-            val body = response.body?.string() ?: return@withContext emptyList()
-            parseValhallaRoutes(body)
+            response.use { resp ->
+                if (!resp.isSuccessful) return@withContext emptyList()
+                val body = resp.body?.string() ?: return@withContext emptyList()
+                parseValhallaRoutes(body)
+            }
         } catch (_: Exception) {
             emptyList()
         }
@@ -602,7 +676,7 @@ class NavigationEngine(
 
         if (allPoints.isEmpty()) return null
 
-        val routeTitle = if (mainRoad.isNotBlank()) "Qua $mainRoad" else "Tuyến chính"
+        val routeTitle = if (mainRoad.isNotBlank()) "Qua $mainRoad" else "Tuyến đường chính"
         return OSMRoute(
             coordinates = allPoints,
             distanceMeters = distanceKm * 1000.0,
@@ -668,75 +742,109 @@ class NavigationEngine(
     }
 
     private suspend fun requestOSRMRoutes(start: LatLng, destination: LatLng): List<OSMRoute> = withContext(Dispatchers.IO) {
-        try {
-            val url = "$OSRM_DEFAULT_URL/route/v1/driving/${start.longitude},${start.latitude};${destination.longitude},${destination.latitude}?overview=full&steps=true&geometries=geojson"
+        val coordPath = "${start.longitude},${start.latitude};${destination.longitude},${destination.latitude}"
+        val queryParams = "overview=full&steps=true&geometries=geojson"
+
+        // 1. Thử OSM Routing Germany (Server máy chủ Đức tốc độ cao, không rate-limit)
+        var routes = requestOSMRoutesFromUrl("$OSM_ROUTING_DE_URL/route/v1/driving/$coordPath?$queryParams")
+        if (routes.isNotEmpty()) return@withContext routes
+
+        // 2. Thử Project OSRM HTTPS
+        routes = requestOSMRoutesFromUrl("$OSRM_DEFAULT_URL/route/v1/driving/$coordPath?$queryParams")
+        if (routes.isNotEmpty()) return@withContext routes
+
+        // 3. Thử Project OSRM HTTP cleartext fallback
+        routes = requestOSMRoutesFromUrl("$OSRM_FALLBACK_HTTP_URL/route/v1/driving/$coordPath?$queryParams")
+        routes
+    }
+
+    private fun requestOSMRoutesFromUrl(url: String): List<OSMRoute> {
+        return try {
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "NConnect-Yamaha-Android/1.0")
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) NConnect-Yamaha-Android/1.0")
+                .header("Accept", "application/json")
                 .build()
 
             val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext emptyList()
-
-            val body = response.body?.string() ?: return@withContext emptyList()
-            val json = JSONObject(body)
-            val routes = json.optJSONArray("routes") ?: return@withContext emptyList()
-            if (routes.length() == 0) return@withContext emptyList()
-
-            val r = routes.getJSONObject(0)
-            val distance = r.optDouble("distance", 0.0)
-            val duration = r.optDouble("duration", 0.0)
-
-            val geom = r.optJSONObject("geometry")
-            val coords = geom?.optJSONArray("coordinates") ?: return@withContext emptyList()
-            val points = mutableListOf<LatLng>()
-            for (i in 0 until coords.length()) {
-                val pt = coords.getJSONArray(i)
-                points.add(LatLng(pt.getDouble(1), pt.getDouble(0)))
+            response.use { resp ->
+                if (!resp.isSuccessful) return emptyList()
+                val body = resp.body?.string() ?: return emptyList()
+                parseOSRMJson(body)
             }
-
-            val stepsList = mutableListOf<NavigationStep>()
-            val legs = r.optJSONArray("legs")
-            if (legs != null && legs.length() > 0) {
-                val legSteps = legs.getJSONObject(0).optJSONArray("steps")
-                if (legSteps != null) {
-                    for (i in 0 until legSteps.length()) {
-                        val s = legSteps.getJSONObject(i)
-                        val name = s.optString("name", "")
-                        val dist = s.optDouble("distance", 0.0).toInt()
-                        val man = s.optJSONObject("maneuver")
-                        val manType = man?.optString("type", "turn") ?: "turn"
-                        val modifier = man?.optString("modifier", "") ?: ""
-                        val dir = mapOSRMModifierToDirection(manType, modifier)
-                        val stepLoc = man?.optJSONArray("location")
-                        val coord = if (stepLoc != null) LatLng(stepLoc.getDouble(1), stepLoc.getDouble(0)) else points.first()
-
-                        stepsList.add(
-                            NavigationStep(
-                                instruction = "$modifier vào $name",
-                                distanceMeters = dist,
-                                direction = dir,
-                                coordinate = coord,
-                                roadName = name
-                            )
-                        )
-                    }
-                }
-            }
-
-            listOf(
-                OSMRoute(
-                    coordinates = points,
-                    distanceMeters = distance,
-                    durationSeconds = duration,
-                    steps = stepsList,
-                    routeName = "Tuyến OSRM dự phòng",
-                    isFastest = true
-                )
-            )
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    private fun parseOSRMJson(body: String): List<OSMRoute> {
+        val json = JSONObject(body)
+        val routes = json.optJSONArray("routes") ?: return emptyList()
+        if (routes.length() == 0) return emptyList()
+
+        val r = routes.getJSONObject(0)
+        val distance = r.optDouble("distance", 0.0)
+        val duration = r.optDouble("duration", 0.0)
+
+        val geom = r.optJSONObject("geometry")
+        val coords = geom?.optJSONArray("coordinates") ?: return emptyList()
+        val points = mutableListOf<LatLng>()
+        for (i in 0 until coords.length()) {
+            val pt = coords.getJSONArray(i)
+            points.add(LatLng(pt.getDouble(1), pt.getDouble(0)))
+        }
+
+        val stepsList = mutableListOf<NavigationStep>()
+        var mainRoadName = ""
+        val legs = r.optJSONArray("legs")
+        if (legs != null && legs.length() > 0) {
+            val legSteps = legs.getJSONObject(0).optJSONArray("steps")
+            if (legSteps != null) {
+                for (i in 0 until legSteps.length()) {
+                    val s = legSteps.getJSONObject(i)
+                    val name = s.optString("name", "")
+                    if (mainRoadName.isBlank() && name.isNotBlank()) mainRoadName = name
+                    val dist = s.optDouble("distance", 0.0).toInt()
+                    val man = s.optJSONObject("maneuver")
+                    val manType = man?.optString("type", "turn") ?: "turn"
+                    val modifier = man?.optString("modifier", "") ?: ""
+                    val dir = mapOSRMModifierToDirection(manType, modifier)
+                    val stepLoc = man?.optJSONArray("location")
+                    val coord = if (stepLoc != null) LatLng(stepLoc.getDouble(1), stepLoc.getDouble(0)) else points.first()
+
+                    val instructionText = when (dir) {
+                        NavigationDirection.DESTINATION -> "Đến điểm đích"
+                        NavigationDirection.U_TURN -> "Quay đầu xe"
+                        NavigationDirection.ROUNDABOUT -> "Đi vào bùng binh"
+                        NavigationDirection.RIGHT, NavigationDirection.SHARP_RIGHT, NavigationDirection.SLIGHT_RIGHT -> if (name.isNotBlank()) "Rẽ phải vào $name" else "Rẽ phải"
+                        NavigationDirection.LEFT, NavigationDirection.SHARP_LEFT, NavigationDirection.SLIGHT_LEFT -> if (name.isNotBlank()) "Rẽ trái vào $name" else "Rẽ trái"
+                        else -> if (name.isNotBlank()) "Đi thẳng trên $name" else "Đi thẳng"
+                    }
+
+                    stepsList.add(
+                        NavigationStep(
+                            instruction = instructionText,
+                            distanceMeters = dist,
+                            direction = dir,
+                            coordinate = coord,
+                            roadName = name
+                        )
+                    )
+                }
+            }
+        }
+
+        val routeTitle = if (mainRoadName.isNotBlank()) "Qua $mainRoadName" else "Tuyến đường tối ưu"
+        return listOf(
+            OSMRoute(
+                coordinates = points,
+                distanceMeters = distance,
+                durationSeconds = duration,
+                steps = stepsList,
+                routeName = routeTitle,
+                isFastest = true
+            )
+        )
     }
 
     private fun mapOSRMModifierToDirection(type: String, modifier: String): NavigationDirection {

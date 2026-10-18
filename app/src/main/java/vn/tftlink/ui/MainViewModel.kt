@@ -53,7 +53,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val streamRenderer = TFTStreamRenderer(application, viewModelScope)
 
     // 2. Navigation & Map Services
-    val navEngine = NavigationEngine.getInstance(application, viewModelScope)
+    val navEngine = NavigationEngine.getInstance(application)
     val parkingManager = ParkingLocationManager.getInstance(application, viewModelScope)
     val savedPlacesManager = SavedPlacesManager.getInstance(application)
 
@@ -335,7 +335,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         destinationTitle: String = "Điểm đến",
         autoStart: Boolean = false
     ) {
-        val origin = navEngine.currentLocation.value ?: navEngine.getEffectiveLocation()
+        var origin = navEngine.currentLocation.value
+        if (origin == null || !navEngine.isValidCoordinate(origin)) {
+            origin = navEngine.getEffectiveLocation()
+        }
         navEngine.calculateRoute(
             origin = origin,
             destination = destination,
@@ -544,6 +547,55 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    // =========================================================================
+    // SYSTEM DIAGNOSTICS & TROUBLESHOOTING LOGS
+    // =========================================================================
+
+    fun getFullDiagnosticLogText(): String {
+        val sb = StringBuilder()
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        sb.appendLine("=== NCONNECT YAMAHA DIAGNOSTIC LOG ===")
+        sb.appendLine("Thời gian xuất: ${sdf.format(java.util.Date())}")
+        sb.appendLine("Phiên bản ứng dụng: ${getCurrentVersionName()} (Build ${getCurrentVersionCode()})")
+        sb.appendLine("Thiết bị: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE}, API ${android.os.Build.VERSION.SDK_INT})")
+        sb.appendLine("Trạng thái kết nối xe: ${connectionState.value}")
+        sb.appendLine("Xe đang kết nối: ${connectedBike.value?.name ?: "Chưa kết nối"} (${connectedBike.value?.address ?: "N/A"})")
+        sb.appendLine("Ắc quy xe: ${telemetry.value.batteryVoltage} V | Nhiệt độ máy: ${telemetry.value.coolantTemp} °C | Odo: ${telemetry.value.odometerKm} km")
+        val loc = currentLocation.value ?: navEngine.getEffectiveLocation()
+        sb.appendLine("Toạ độ GPS hiện tại: ${loc.latitude}, ${loc.longitude}")
+        sb.appendLine("Tốc độ GPS: ${currentSpeedKmh.value} km/h | Hướng lái: ${currentHeading.value}°")
+        sb.appendLine("Trạng thái dẫn đường: isNavigating = ${isNavigating.value}, Điểm đến = ${destinationTitle.value}")
+        sb.appendLine("Lỗi lộ trình gần nhất: ${navEngine.routeErrorMessage.value ?: "Không có lỗi"}")
+        sb.appendLine("Nguồn bản đồ xe: ${clusterMapSource.value.name}")
+        sb.appendLine()
+        sb.appendLine("--- NHẬT KÝ CHI TIẾT BLE & HỆ THỐNG (${diagnosticLogs.value.size} dòng) ---")
+        diagnosticLogs.value.forEach { line ->
+            sb.appendLine(line)
+        }
+        return sb.toString()
+    }
+
+    fun exportDiagnosticLogs(context: Context) {
+        val logText = getFullDiagnosticLogText()
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "NConnect_Log_${java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())}.txt")
+            putExtra(Intent.EXTRA_TEXT, logText)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val chooser = Intent.createChooser(sendIntent, "Xuất nhật ký chẩn đoán NConnect").apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(chooser)
+    }
+
+    fun copyDiagnosticLogsToClipboard(context: Context) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        val clip = android.content.ClipData.newPlainText("NConnect Diagnostic Log", getFullDiagnosticLogText())
+        clipboard?.setPrimaryClip(clip)
+        Toast.makeText(context, "Đã sao chép toàn bộ nhật ký vào bộ nhớ tạm", Toast.LENGTH_SHORT).show()
     }
 
     override fun onCleared() {

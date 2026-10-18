@@ -19,11 +19,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -43,6 +47,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -82,9 +88,11 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val connectedBike by viewModel.connectedBike.collectAsState()
     val updateStatus by viewModel.updateStatus.collectAsState()
     val clusterMapSource by viewModel.clusterMapSource.collectAsState()
+    val diagnosticLogs by viewModel.diagnosticLogs.collectAsState()
 
     var mapSourceMenuExpanded by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
+    var showLogDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(updateStatus) {
         if (updateStatus is UpdateStatus.UpdateAvailable) {
@@ -696,6 +704,122 @@ fun SettingsScreen(viewModel: MainViewModel) {
             }
         }
 
+        // Section: Chẩn đoán & Nhật ký hệ thống (Troubleshooting)
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
+                border = BorderStroke(1.dp, DarkSurfaceBorder)
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("CHẨN ĐOÁN & NHẬT KÝ HỆ THỐNG", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Xem và xuất log phục vụ gỡ lỗi & hỗ trợ kỹ thuật", color = TextSecondary, fontSize = 12.sp)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .background(DarkSurfaceHighlight, RoundedCornerShape(12.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "${diagnosticLogs.size} logs",
+                                color = NeonGreen,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    // Monospace preview box of latest 3 logs
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(DarkBackground, RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (diagnosticLogs.isEmpty()) {
+                            Text(
+                                text = "Chưa có log sự kiện nào được ghi nhận.",
+                                color = TextMuted,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        } else {
+                            diagnosticLogs.takeLast(3).forEach { logLine ->
+                                Text(
+                                    text = logLine,
+                                    color = TextSecondary,
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showLogDialog = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, YamahaCyan.copy(alpha = 0.5f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Description,
+                                contentDescription = null,
+                                tint = YamahaCyan,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Xem log", color = YamahaCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        OutlinedButton(
+                            onClick = { viewModel.copyDiagnosticLogsToClipboard(context) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, DarkSurfaceBorder)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = null,
+                                tint = TextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Sao chép", color = TextPrimary, fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = { viewModel.exportDiagnosticLogs(context) },
+                            modifier = Modifier.weight(1.2f),
+                            colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = null,
+                                tint = Color.Black,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Xuất file", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
         // Section: Thông tin ứng dụng
         item {
             Card(
@@ -760,6 +884,79 @@ fun SettingsScreen(viewModel: MainViewModel) {
             dismissButton = {
                 OutlinedButton(onClick = { showUpdateDialog = false }) {
                     Text("Để sau", color = TextSecondary)
+                }
+            }
+        )
+    }
+
+    if (showLogDialog) {
+        val fullLog = remember(showLogDialog) { viewModel.getFullDiagnosticLogText() }
+        AlertDialog(
+            onDismissRequest = { showLogDialog = false },
+            containerColor = DarkSurfaceCard,
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Nhật ký hệ thống & CCU",
+                        color = YamahaCyan,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = { showLogDialog = false }) {
+                        Icon(Icons.Default.Close, contentDescription = "Đóng", tint = TextSecondary)
+                    }
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Bao gồm thông tin thiết bị, GPS, BLE CCU packet và lộ trình dẫn đường.",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(320.dp)
+                            .background(DarkBackground, RoundedCornerShape(6.dp))
+                            .padding(8.dp)
+                    ) {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            item {
+                                Text(
+                                    text = fullLog,
+                                    color = TextPrimary,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    lineHeight = 14.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.exportDiagnosticLogs(context)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan)
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Chia sẻ / Gửi log", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { viewModel.copyDiagnosticLogsToClipboard(context) }) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Sao chép", color = TextPrimary)
                 }
             }
         )

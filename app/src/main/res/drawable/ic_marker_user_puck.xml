@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="36dp"
+    android:height="36dp"
+    android:viewportWidth="36"
+    android:viewportHeight="36">
+    <!-- Outer Glow / Shadow -->
+    <path
+        android:fillColor="#3300E5FF"
+        android:pathData="M18,18m-17,0a17,17 0,1,1 34,0a17,17 0,1,1 -34,0" />
+    <!-- White Ring Base -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M18,18m-13,0a13,13 0,1,1 26,0a13,13 0,1,1 -26,0" />
+    <!-- Cyan / Blue Navigation Disc (Yamaha Cyan #00E5FF) -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M18,18m-10,0a10,10 0,1,1 20,0a10,10 0,1,1 -20,0" />
+    <!-- Forward Pointing Navigation Arrowhead -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M18,7 L24,23 L18,19.5 L12,23 Z" />
+</vector>

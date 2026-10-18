@@ -685,3 +685,45 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - Ưu tiên #3: GitHub Contents API (chỉ dùng làm phương án dự phòng cuối cùng).
   6. **Bọc `withContext(NonCancellable)` trong khối xử lý lỗi & rút ngắn timeout còn 8 giây**:
      - Dù timeout hay có lỗi bất kỳ, trạng thái luôn được hoàn trả dứt khoát về `UpdateStatus.Error` hoặc `UpdateStatus.Idle` (nếu hủy), **tuyệt đối không bao giờ kẹt lại ở `UpdateStatus.Checking`**.
+
+---
+
+### 📌 Quy tắc 14: Khắc phục triệt để lỗi định tuyến lộ trình, Icon pin chuẩn Google Maps, Địa chỉ ghim & Xuất Log chẩn đoán hệ thống (v0.5.36 Build 66)
+- **Các yêu cầu người dùng cần xử lý**:
+  1. *Bị lỗi ko thể tìm thấy lộ trình đến …. Lỗi này bị bất kì địa điểm nào.*
+  2. *Không cần hiện bản đồ nhỏ trong tab bản đồ.*
+  3. *Các icon pin xấu quá, sử dụng icon bình thường hay dùng đó, nếu có thể dùng icon giống trong google maps thì càng tốt.*
+  4. *Pin vị trí trên bản đồ hiện tại chỉ hiện toạ độ, nên hiện thêm địa chỉ cụ thể và thêm option để thêm vào yêu thích.*
+  5. *Trong tab cài đặt nên thêm 1 phần để xuất log khi cần troubleshooting.*
+- **Nguyên nhân gốc rễ kỹ thuật & Phân tích chuyên sâu**:
+  1. **Lỗi định tuyến bất kỳ địa điểm nào ("Không thể tìm thấy lộ trình...")**:
+     - *Bẫy tọa độ (0.0, 0.0)*: Khi GPS chưa kịp khóa vị trí hoặc SharedPreferences lưu lại `last_lat = 0.0`, `getEffectiveLocation()` trả về `(0.0, 0.0)`. Khi gửi yêu cầu tính lộ trình từ toạ độ này đến Việt Nam, máy chủ Valhalla từ chối với HTTP 400 (`Path distance exceeds max distance limit: 1500000m`). Do không có bộ lọc toạ độ hợp lệ, lỗi xảy ra với toàn bộ các địa điểm tìm kiếm và điểm ghim.
+     - *Rò rỉ CoroutineScope của NavigationEngine*: `calculateRoute` phụ thuộc vào `scope` truyền từ ngoài vào (`viewModelScope`). Khi người dùng chuyển tab hoặc xoay màn hình, scope bị hủy khiến tác vụ tính toán bị ngắt ngầm mà không có thông báo.
+     - *Thiếu cơ chế dự phòng khi máy chủ định tuyến gặp sự cố*: Chỉ có duy nhất 1 endpoint Valhalla, nếu mạng chập chờn hoặc máy chủ Valhalla quá tải thì việc tìm đường bị thất bại hoàn toàn.
+  2. **Bẫy ngôn ngữ Photon Reverse Geocoding**:
+     - API Geocoding dự phòng `https://photon.komoot.io/reverse` không hỗ trợ tham số `lang=vi` (chỉ chấp nhận default, de, en, fr). Việc truyền `lang=vi` khiến API ném HTTP 400, dẫn đến việc ghim vị trí chỉ hiển thị toạ độ dạng số thay vì tên đường và địa chỉ cụ thể.
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Hệ thống định tuyến 3 tầng dự phòng (Multi-Tier Routing Engine) & Bộ lọc toạ độ**:
+     - Bổ sung hàm kiểm tra `isValidCoordinate(loc)`: Toạ độ phải nằm trong giới hạn thực tế (`abs(lat) > 0.0001 && abs(lng) > 0.0001`). Loại bỏ triệt để việc gửi toạ độ `(0, 0)` lên máy chủ định tuyến.
+     - `NavigationEngine` tự quản lý `engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)` độc lập, đảm bảo tác vụ tính toán lộ trình chạy xuyên suốt và không bao giờ bị hủy theo ViewModel.
+     - Cơ chế dự phòng 3 tầng tự động:
+       - **Tầng 1 (Ưu tiên xe máy)**: Valhalla Motorcycle API (`https://valhalla1.openstreetmap.de/route`) - tối ưu đường đi xe máy, tránh cao tốc.
+       - **Tầng 2 (Dự phòng OSM Germany)**: OpenStreetMap Germany Router (`https://routing.openstreetmap.de/routed-car/route/v1/driving/...`).
+       - **Tầng 3 (Dự phòng OSRM Quốc tế)**: OSRM Project Routing (`https://router.project-osrm.org/...` & HTTP fallback).
+     - Bổ sung `android:usesCleartextTraffic="true"` trong `AndroidManifest.xml` để đảm bảo các kết nối dự phòng HTTP không bị hệ điều hành chặn.
+  2. **Bộ Icon Marker chuẩn Google Maps**:
+     - Thiết kế vector drawable `ic_marker_google_pin.xml`: Ghim đỏ giọt nước với bóng đổ và chấm tròn trắng ở tâm chuẩn phong cách Google Maps, chân ghim đặt chính xác tại `(0.5f, 1.0f)`.
+     - Thiết kế `ic_marker_user_puck.xml`: Con trỏ điều hướng GPS dạng puck tròn màu xanh lam có mũi tên chỉ hướng lái, xoay theo góc la bàn của xe.
+     - Thiết kế `ic_marker_parked_bike.xml`: Ghim xe đỗ chuyên biệt với icon xe máy Yamaha thể thao.
+  3. **Địa chỉ chi tiết & Thêm vào Yêu thích cho Điểm ghim**:
+     - Chuẩn hóa Photon Reverse Geocoding (bỏ tham số `lang` không tương thích, tự động nhận diện ngôn ngữ địa phương tiếng Việt).
+     - Khi rider nhấn giữ bất kỳ vị trí nào trên bản đồ: Ngay lập tức hiện trạng thái "Đang lấy địa chỉ...", sau đó cập nhật đầy đủ tên địa danh, số nhà, ngõ/đường, phường/xã.
+     - Thêm nút **"Yêu thích"** ngay bên cạnh nút "Dẫn đường": Bấm vào sẽ lưu trực tiếp địa điểm vào `SavedPlacesManager` và hiển thị thông báo "Đã thêm vào mục Yêu thích".
+  4. **Ẩn bản đồ nhỏ xem trước trong tab Bản đồ**:
+     - Loại bỏ hoàn toàn khối Card Mini TFT Preview (`// 6. Mini TFT Mirror Card (Bottom Left)`) trong `LiveNavigationScreen.kt`, giúp màn hình bản đồ rộng rãi và tối ưu tầm nhìn điều hướng.
+  5. **Khu vực Chẩn đoán & Xuất nhật ký (Troubleshooting Logs) trong Cài đặt**:
+     - Thêm card "CHẨN ĐOÁN & NHẬT KÝ HỆ THỐNG" vào `SettingsScreen.kt`.
+     - Hiển thị số lượng log hiện tại và hộp xem trước log dạng Monospace.
+     - Hộp thoại xem chi tiết toàn bộ log (Thông tin máy, Android API, BLE CCU packets, GPS coordinates, lỗi lộ trình...).
+     - Tích hợp 2 nút thao tác nhanh: **"Sao chép"** vào bộ nhớ tạm (Clipboard) và **"Xuất file"** kích hoạt Share Intent hệ thống.
+

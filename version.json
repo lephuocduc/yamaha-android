@@ -1,6 +1,6 @@
 {
-  "versionCode": 65,
-  "versionName": "0.5.35",
-  "releaseNotes": "Sửa triệt để lỗi kiểm tra cập nhật lại bị treo xoay vòng vĩnh viễn: 1) Tách vòng đời updater với SupervisorJob độc lập, không bị hủy coroutine khi chuyển trang hoặc cài đặt APK; 2) Triệt tiêu socket nhàn rỗi (ConnectionPool = 0) và đóng toàn bộ response kết nối, loại bỏ hoàn toàn hiện tượng kẹt socket do mạng 4G/5G rớt ngầm; 3) Tự động chuyển máy chủ Raw GitHub/jsDelivr không giới hạn lượt truy cập; 4) Bọc NonCancellable và timeout 8s đảm bảo trạng thái luôn hoàn trả chính xác.",
+  "versionCode": 66,
+  "versionName": "0.5.36",
+  "releaseNotes": "Nâng cấp toàn diện định tuyến, ghim vị trí và chẩn đoán hệ thống: 1) Sửa triệt để lỗi không tìm thấy lộ trình dẫn đường với cơ chế 3 tầng máy chủ dự phòng (Valhalla -> OSM Routing Germany -> OSRM) và bộ lọc tọa độ hợp lệ; 2) Sử dụng bộ icon ghim chuẩn phong cách Google Maps (ghim đỏ giọt nước, con trỏ điều hướng puck và icon xe đỗ); 3) Hiển thị địa chỉ chi tiết cụ thể khi ghim vị trí thay vì chỉ tọa độ, kèm nút thêm nhanh vào mục Yêu thích; 4) Ẩn bản đồ nhỏ xem trước trong tab Bản đồ theo yêu cầu; 5) Thêm khu vực Chẩn đoán & Xuất nhật ký (Log Troubleshooting) trong tab Cài đặt.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }
