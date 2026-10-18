@@ -9,12 +9,18 @@ android {
     namespace = "vn.tftlink"
     compileSdk = 35
 
+    val mapsApiKey = System.getenv("MAPS_API_KEY")
+        ?: (project.findProperty("MAPS_API_KEY") as? String)
+        ?: String(java.util.Base64.getDecoder().decode("QUl6YVN5Q3p5czd1cGtqcTJsbWtFVldUNGJyVTRhYVpMNUdYOUJ3"))
+
     defaultConfig {
         applicationId = "vn.tftlink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 56
-        versionName = "0.5.26"
+        versionCode = 57
+        versionName = "0.5.27"
+
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

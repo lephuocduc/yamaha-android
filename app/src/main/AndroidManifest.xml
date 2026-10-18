@@ -66,10 +66,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.NConnect">
 
-        <!-- Google Maps API Key -->
+        <!-- Google Maps API Key injected via manifestPlaceholders -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyCzys7upkjq2lmkEVWT4brU4aaZL5GX9Bw" />
+            android:value="${MAPS_API_KEY}" />
 
         <!-- Main Activity -->
         <activity

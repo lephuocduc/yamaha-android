@@ -1,6 +1,6 @@
 {
-  "versionCode": 56,
-  "versionName": "0.5.26",
-  "releaseNotes": "Chiếu bản đồ Google Maps kèm mật độ giao thông thời gian thực (Traffic Layer) lên đồng hồ xe máy Yamaha; Tiếp nhận vị trí chia sẻ trực tiếp từ ứng dụng Google Maps sang NConnect tự động dẫn đường.",
+  "versionCode": 57,
+  "versionName": "0.5.27",
+  "releaseNotes": "Bảo mật: Gỡ bỏ khóa cứng Google API Key trong AndroidManifest.xml để giải quyết GitHub Secret Scanning Alert; tiêm động qua manifestPlaceholders.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }
