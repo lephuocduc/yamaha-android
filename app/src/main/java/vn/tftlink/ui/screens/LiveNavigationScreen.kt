@@ -20,13 +20,16 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -54,12 +57,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -71,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -89,6 +89,7 @@ import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import kotlinx.coroutines.launch
+import vn.tftlink.data.model.bike.BikeConnectionState
 import vn.tftlink.data.model.location.SavedPlace
 import vn.tftlink.data.model.nav.NavigationDirection
 import vn.tftlink.data.model.nav.OSMRoute
@@ -128,9 +129,11 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
     val homePlace by viewModel.homePlace.collectAsState()
     val workPlace by viewModel.workPlace.collectAsState()
     val destinationTitle by viewModel.destinationTitle.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val isBikeConnected = connectionState == BikeConnectionState.CONNECTED
 
     var showMiniPreview by remember { mutableStateOf(true) }
-    var showSearchSheet by remember { mutableStateOf(false) }
+    var isSearchFocused by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var droppedPin by remember { mutableStateOf<LatLng?>(null) }
     var droppedPinTitle by remember { mutableStateOf("Điểm đã ghim") }
@@ -174,7 +177,11 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                 myLocationButtonEnabled = false,
                 zoomControlsEnabled = false
             ),
+            onMapClick = {
+                isSearchFocused = false
+            },
             onMapLongClick = { latLng ->
+                isSearchFocused = false
                 droppedPin = latLng
                 viewModel.reverseGeocode(latLng) { title, address ->
                     droppedPinTitle = title
@@ -343,16 +350,25 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                 fontWeight = FontWeight.Bold
                             )
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                val dotColor = when {
+                                    isStreaming && isBikeConnected -> NeonGreen
+                                    isStreaming && !isBikeConnected -> NeonOrange
+                                    else -> TextMuted
+                                }
                                 Box(
                                     modifier = Modifier
                                         .size(6.dp)
                                         .clip(CircleShape)
-                                        .background(NeonGreen)
+                                        .background(dotColor)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Đang chiếu lên đồng hồ xe",
-                                    color = NeonGreen,
+                                    text = when {
+                                        isStreaming && isBikeConnected -> "Đang chiếu lên đồng hồ xe"
+                                        isStreaming && !isBikeConnected -> "Đang đợi kết nối với xe..."
+                                        else -> "Chưa bật chiếu TFT"
+                                    },
+                                    color = dotColor,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -361,28 +377,181 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     }
                 }
             } else {
-                // Top Search Bar (when idle)
+                // Top Direct Search Bar & Inline Results (No redundant popup dialog!)
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showSearchSheet = true },
-                    colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard.copy(alpha = 0.92f)),
-                    border = BorderStroke(1.dp, DarkSurfaceBorder),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard.copy(alpha = 0.96f)),
+                    border = BorderStroke(1.dp, if (isSearchFocused || searchQuery.isNotBlank()) YamahaCyan else DarkSurfaceBorder),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
                     ) {
-                        Icon(Icons.Default.Search, contentDescription = null, tint = YamahaCyan)
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Tìm kiếm địa điểm hoặc chạm để chỉ đường...",
-                            color = TextSecondary,
-                            fontSize = 14.sp
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = null,
+                                tint = if (isSearchFocused || searchQuery.isNotBlank()) YamahaCyan else TextSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            BasicTextField(
+                                value = searchQuery,
+                                onValueChange = {
+                                    searchQuery = it
+                                    viewModel.searchPlaces(it)
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .onFocusChanged { focusState ->
+                                        isSearchFocused = focusState.isFocused
+                                    },
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    color = TextPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                singleLine = true,
+                                decorationBox = { innerTextField ->
+                                    if (searchQuery.isEmpty()) {
+                                        Text(
+                                            text = "Tìm địa điểm hoặc chạm để chỉ đường...",
+                                            color = TextSecondary,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            )
+
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(
+                                    onClick = {
+                                        searchQuery = ""
+                                        viewModel.searchPlaces("")
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Xóa tìm kiếm",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Quick Action Chips & Search Results shown directly in-place
+                        if (isSearchFocused || searchQuery.isNotBlank() || searchResults.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                homePlace?.let { home ->
+                                    Button(
+                                        onClick = {
+                                            viewModel.calculateRoute(home.coordinate, home.name, autoStart = true)
+                                            isSearchFocused = false
+                                            searchQuery = ""
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Home, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Về nhà", fontSize = 11.sp, color = TextPrimary)
+                                    }
+                                }
+
+                                workPlace?.let { work ->
+                                    Button(
+                                        onClick = {
+                                            viewModel.calculateRoute(work.coordinate, work.name, autoStart = true)
+                                            isSearchFocused = false
+                                            searchQuery = ""
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Work, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Đi làm", fontSize = 11.sp, color = TextPrimary)
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        viewModel.fetchNearbyGasStations()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.LocalGasStation, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Cây xăng", fontSize = 11.sp, color = TextPrimary)
+                                }
+                            }
+
+                            if (isSearching) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(70.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(color = YamahaCyan, modifier = Modifier.size(24.dp))
+                                }
+                            } else if (searchResults.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 240.dp)
+                                ) {
+                                    items(searchResults) { place ->
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 3.dp)
+                                                .clickable {
+                                                    viewModel.calculateRoute(place.coordinate, place.name, autoStart = true)
+                                                    isSearchFocused = false
+                                                    searchQuery = ""
+                                                    viewModel.searchPlaces("")
+                                                },
+                                            colors = CardDefaults.cardColors(containerColor = DarkBackground),
+                                            border = BorderStroke(1.dp, DarkSurfaceBorder)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(10.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(Icons.Default.LocationOn, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(18.dp))
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(place.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    Text(place.address, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -572,8 +741,16 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                         )
                     }
                     Text(
-                        text = if (isStreaming) "LIVE TFT" else "PAUSED",
-                        color = if (isStreaming) NeonGreen else TextMuted,
+                        text = when {
+                            isStreaming && isBikeConnected -> "LIVE TFT"
+                            isStreaming && !isBikeConnected -> "CHỜ XE..."
+                            else -> "PAUSED"
+                        },
+                        color = when {
+                            isStreaming && isBikeConnected -> NeonGreen
+                            isStreaming && !isBikeConnected -> NeonOrange
+                            else -> TextMuted
+                        },
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
@@ -581,137 +758,6 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                             .background(Color.Black.copy(alpha = 0.7f))
                             .padding(horizontal = 4.dp, vertical = 2.dp)
                     )
-                }
-            }
-        }
-    }
-
-    // 7. Modal Bottom Sheet: Search Places & Quick Destinations
-    if (showSearchSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showSearchSheet = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = DarkSurfaceCard
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = {
-                        searchQuery = it
-                        viewModel.searchPlaces(it)
-                    },
-                    placeholder = { Text("Nhập địa chỉ hoặc tên đường...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = YamahaCyan) },
-                    trailingIcon = {
-                        if (searchQuery.isNotBlank()) {
-                            IconButton(onClick = { searchQuery = ""; viewModel.searchPlaces("") }) {
-                                Icon(Icons.Default.Close, contentDescription = null)
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = YamahaCyan,
-                        unfocusedBorderColor = DarkSurfaceBorder
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Quick Action Chips: Home, Work, Gas
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    homePlace?.let { home ->
-                        Button(
-                            onClick = {
-                                viewModel.calculateRoute(home.coordinate, home.name, autoStart = true)
-                                showSearchSheet = false
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Home, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Về nhà", fontSize = 12.sp, color = TextPrimary)
-                        }
-                    }
-
-                    workPlace?.let { work ->
-                        Button(
-                            onClick = {
-                                viewModel.calculateRoute(work.coordinate, work.name, autoStart = true)
-                                showSearchSheet = false
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Work, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Đi làm", fontSize = 12.sp, color = TextPrimary)
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            viewModel.fetchNearbyGasStations()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.LocalGasStation, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Cây xăng", fontSize = 12.sp, color = TextPrimary)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (isSearching) {
-                    Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = YamahaCyan, modifier = Modifier.size(28.dp))
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(320.dp)
-                    ) {
-                        items(searchResults) { place ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .clickable {
-                                        viewModel.calculateRoute(place.coordinate, place.name, autoStart = true)
-                                        showSearchSheet = false
-                                    },
-                                colors = CardDefaults.cardColors(containerColor = DarkBackground),
-                                border = BorderStroke(1.dp, DarkSurfaceBorder)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Default.LocationOn, contentDescription = null, tint = YamahaCyan)
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(place.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text(place.address, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }

@@ -1,6 +1,6 @@
 {
-  "versionCode": 57,
-  "versionName": "0.5.27",
-  "releaseNotes": "Bảo mật: Gỡ bỏ khóa cứng Google API Key trong AndroidManifest.xml để giải quyết GitHub Secret Scanning Alert; tiêm động qua manifestPlaceholders.",
+  "versionCode": 58,
+  "versionName": "0.5.28",
+  "releaseNotes": "Tối ưu UX & Sửa lỗi logic: 1) Bỏ nút tạo chuyến đi mẫu; 2) Bỏ thông tin phần cứng & kết nối ở Cài đặt; 3) Tìm kiếm địa điểm trực tiếp in-place trên đỉnh bản đồ (bỏ popup lặp); 4) Báo 'Đang đợi kết nối với xe' khi chiếu TFT mà chưa kết nối; 5) Đặt giá trị ắc quy '-- V' khi chưa kết nối thay vì giả lập 12.8V.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

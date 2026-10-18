@@ -859,6 +859,7 @@ class YamahaCCUManager(
         ddtWriteChar = null
         ddtNotifyChar = null
         telemetryChar = null
+        _telemetry.value = BikeTelemetry()
         streetCross.reset()
 
         try {

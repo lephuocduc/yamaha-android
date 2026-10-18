@@ -305,46 +305,6 @@ fun SettingsScreen(viewModel: MainViewModel) {
             }
         }
 
-        // Section: Thông tin thiết bị kết nối
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                border = BorderStroke(1.dp, DarkSurfaceBorder)
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("THÔNG TIN PHẦN CỨNG & KẾT NỐI", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Trạng thái BLE CCU", color = TextSecondary, fontSize = 13.sp)
-                        Text(connectionState.rawValue, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    connectedBike?.let { bike ->
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Tên Bluetooth xe", color = TextSecondary, fontSize = 13.sp)
-                            Text(bike.name, color = NeonGreen, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Độ phân giải màn hình TFT", color = TextSecondary, fontSize = 13.sp)
-                        Text("480 × 234 pixels", color = TextPrimary, fontSize = 13.sp)
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Mã phần mềm Garmin", color = TextSecondary, fontSize = 13.sp)
-                        Text(StreetCrossProtocol.softwarePartNumber, color = TextPrimary, fontSize = 13.sp)
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Kênh truyền đồ họa", color = TextSecondary, fontSize = 13.sp)
-                        Text("SPP RFCOMM Socket / BLE Fallback", color = TextPrimary, fontSize = 13.sp)
-                    }
-                }
-            }
-        }
-
         // Section: Cập nhật phần mềm OTA
         item {
             Card(

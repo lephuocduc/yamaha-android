@@ -461,12 +461,42 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
 ---
 
 ## 4. QUY TRÌNH BIÊN DỊCH VÀ PHÁT HÀNH (CI/CD)
-- Dự án sử dụng GitHub Actions workflow (`.github/workflows/build-ios.yml`).
+- Dự án sử dụng GitHub Actions workflow (`.github/workflows/build-ios.yml` cho iOS và `.github/workflows/build.yml` cho Android).
 - Mỗi khi có commit mới được push lên nhánh `main`, hệ thống tự động:
-  1. Kiểm tra mã nguồn Swift.
-  2. Biên dịch dự án bằng lệnh `xcodebuild` (SDK `iphoneos`, cấu hình `Release`).
-  3. Đóng gói thư mục `Payload` thành file `NConnect.ipa`.
-  4. Xuất file Artifact `NConnect-iOS-IPA` để tải về và cài đặt trực tiếp qua TrollStore / AltStore / Sideloadly / Scarlet.
+  1. Biên dịch mã nguồn Kotlin / Gradle.
+  2. Ký APK bằng Keystore cố định (`app/keystore/debug.keystore`).
+  3. Xuất file Artifact `app-debug.apk` và cập nhật OTA qua `version.json`.
+
+---
+
+## 5. SỔ TAY QUY TẮC LOGIC & UX CHO PHIÊN BẢN ANDROID (TRÁNH LẶP LẠI LỖI)
+
+### 📌 Quy tắc 1: Không tạo nút/dữ liệu mẫu giả lập trên màn hình người dùng
+- **Lỗi đã gặp**: Màn hình lịch sử chuyến đi có nút *"Tạo chuyến đi mẫu để xem thử"*, làm lẫn lộn dữ liệu test với dữ liệu vận hành thực tế của rider.
+- **Giải pháp**: Xóa hoàn toàn nút này. Khi chưa có chuyến đi, chỉ hiển thị empty state giải thích cách hệ thống tự động lưu chuyến đi khi kết nối xe.
+
+### 📌 Quy tắc 2: Tinh gọn tab Cài đặt (Settings Decluttering)
+- **Lỗi đã gặp**: Tab Cài đặt hiển thị card *"Thông tin phần cứng & kết nối"* chiếm diện tích và dư thừa (vì dashboard đã hiển thị trạng thái kết nối).
+- **Giải pháp**: Loại bỏ toàn bộ card này trong `SettingsScreen.kt`, giữ tab cài đặt tập trung vào cấu hình chế độ màn hình, dịch vụ bản đồ và cập nhật phần mềm.
+
+### 📌 Quy tắc 3: Tìm kiếm địa điểm trực tiếp in-place, KHÔNG mở popup ô tìm kiếm thứ hai
+- **Lỗi đã gặp**: Người dùng bấm vào ô tìm kiếm ở đỉnh bản đồ thì app lại bật một `ModalBottomSheet` hiện ra một ô tìm kiếm khác ở dưới đáy.
+- **Giải pháp**: Ô tìm kiếm ở đỉnh `LiveNavigationScreen.kt` là `BasicTextField` nhập trực tiếp. Menu phím tắt nhanh ("Về nhà", "Đi làm", "Cây xăng") và danh sách kết quả tìm kiếm thả xuống (dropdown) ngay dưới ô tìm kiếm như Google Maps / Apple Maps.
+
+### 📌 Quy tắc 4: Logic trạng thái chiếu màn hình TFT khi chưa kết nối xe
+- **Lỗi đã gặp**: Khi chưa kết nối xe máy, nếu bấm vào card *"Bản đồ chiếu lên xe (TFT Mirror)"* thì thanh trạng thái lại báo *"Đang chiếu màn hình TFT"* (xanh lá).
+- **Giải pháp**: Kiểm tra điều kiện `isConnected = state == BikeConnectionState.CONNECTED`.
+  + Nếu `isStreaming && isConnected`: Hiển thị *"Đang chiếu màn hình TFT"* (NeonGreen).
+  + Nếu `isStreaming && !isConnected`: Hiển thị *"Đang đợi kết nối với xe..."* (NeonOrange).
+  + Nút chiếu TFT và HUD trên bản đồ đồng bộ trạng thái chờ kết nối xe tương ứng.
+
+### 📌 Quy tắc 5: Thông số Telemetry chính xác khi chưa kết nối xe
+- **Lỗi đã gặp**: Chưa kết nối xe mà ắc quy hiển thị cố định 12.8V, mức xăng 100%.
+- **Giải pháp**:
+  + `BikeTelemetry`: Giá trị mặc định của `batteryVoltage = 0.0`, `fuelPercent = 0`.
+  + Giao diện (`TelemetryGridCard`): Khi xe chưa kết nối hoặc `batteryVoltage <= 0.0`, hiển thị `-- V`, vận tốc hiển thị `-- km/h`.
+  + `YamahaCCUManager.handleDisconnection()`: Tự động reset `_telemetry.value = BikeTelemetry()`.
+
 
 
 

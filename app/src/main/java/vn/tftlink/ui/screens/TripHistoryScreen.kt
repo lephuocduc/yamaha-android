@@ -230,17 +230,6 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
                                 fontSize = 12.sp,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { viewModel.addSampleTrip() },
-                                colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan.copy(alpha = 0.2f), contentColor = YamahaCyan),
-                                border = BorderStroke(1.dp, YamahaCyan),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Tạo chuyến đi mẫu để xem thử", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
                         }
                     }
                 }

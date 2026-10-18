@@ -217,7 +217,11 @@ fun MainDashboardScreen(
 
         // 2. Telemetry Card
         item {
-            TelemetryGridCard(telemetry = telemetry, currentRoad = currentRoad)
+            TelemetryGridCard(
+                telemetry = telemetry,
+                currentRoad = currentRoad,
+                isConnected = connectionState == BikeConnectionState.CONNECTED
+            )
         }
 
         // 3. TFT Mirror Preview Card
@@ -225,6 +229,7 @@ fun MainDashboardScreen(
             TFTMirrorPreviewCard(
                 bitmap = lastFrameBitmap,
                 isStreaming = isStreaming,
+                isConnected = connectionState == BikeConnectionState.CONNECTED,
                 currentRoad = currentRoad,
                 zoomDescription = zoomDesc,
                 onToggleStreaming = { viewModel.toggleStreaming() },
@@ -495,8 +500,10 @@ fun ConnectionStatusCard(
     isStreaming: Boolean,
     onConnectClick: () -> Unit
 ) {
+    val isConnected = state == BikeConnectionState.CONNECTED
     val statusColor = when {
-        isStreaming -> NeonGreen
+        isStreaming && isConnected -> NeonGreen
+        isStreaming && !isConnected -> NeonOrange
         state == BikeConnectionState.CONNECTED -> YamahaCyan
         state == BikeConnectionState.AUTHENTICATING || state == BikeConnectionState.SCANNING -> NeonOrange
         else -> TextMuted
@@ -524,7 +531,11 @@ fun ConnectionStatusCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isStreaming) "Đang chiếu màn hình TFT" else state.rawValue,
+                        text = when {
+                            isStreaming && isConnected -> "Đang chiếu màn hình TFT"
+                            isStreaming && !isConnected -> "Đang đợi kết nối với xe..."
+                            else -> state.rawValue
+                        },
                         color = TextPrimary,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
@@ -532,8 +543,12 @@ fun ConnectionStatusCard(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = connectedBike?.let { "Xe: ${it.name}" } ?: "Bật chìa khóa xe để tự động kết nối...",
-                    color = if (connectedBike != null) NeonGreen else TextSecondary,
+                    text = when {
+                        isStreaming && !isConnected -> "Đã bật chiếu TFT. Vui lòng kết nối với xe để truyền hình ảnh."
+                        connectedBike != null -> "Xe: ${connectedBike.name}"
+                        else -> "Bật chìa khóa xe để tự động kết nối..."
+                    },
+                    color = if (connectedBike != null) NeonGreen else if (isStreaming && !isConnected) NeonOrange else TextSecondary,
                     fontSize = 12.sp
                 )
             }
@@ -553,7 +568,7 @@ fun ConnectionStatusCard(
                         state == BikeConnectionState.CONNECTED -> "Chiếu lên xe"
                         state == BikeConnectionState.AUTHENTICATING -> "Bắt đầu chiếu"
                         state == BikeConnectionState.SCANNING -> "Đang dò..."
-                        else -> "Kết nối"
+                        else -> "Kết nối xe"
                     },
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp
@@ -566,7 +581,8 @@ fun ConnectionStatusCard(
 @Composable
 fun TelemetryGridCard(
     telemetry: vn.tftlink.data.model.bike.BikeTelemetry,
-    currentRoad: String
+    currentRoad: String,
+    isConnected: Boolean
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -586,18 +602,24 @@ fun TelemetryGridCard(
                     Text("TỐC ĐỘ", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("${telemetry.speedKmh}", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                val speedDisplay = if (isConnected) "${telemetry.speedKmh.toInt()}" else "--"
+                Text(speedDisplay, color = if (isConnected) TextPrimary else TextSecondary, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                 Text("km/h", color = TextMuted, fontSize = 10.sp)
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.BatteryChargingFull, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.BatteryChargingFull, contentDescription = null, tint = if (isConnected) NeonGreen else TextMuted, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("ẮC QUY", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(String.format("%.1fV", telemetry.batteryVoltage), color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                val batteryDisplay = if (isConnected && telemetry.batteryVoltage > 0.0) {
+                    String.format("%.1fV", telemetry.batteryVoltage)
+                } else {
+                    "-- V"
+                }
+                Text(batteryDisplay, color = if (isConnected && telemetry.batteryVoltage > 0.0) TextPrimary else TextSecondary, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                 Text("Bình điện", color = TextMuted, fontSize = 10.sp)
             }
 
@@ -609,8 +631,8 @@ fun TelemetryGridCard(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = if (currentRoad.isNotEmpty()) currentRoad else "Yamaha",
-                    color = YamahaCyan,
+                    text = if (currentRoad.isNotEmpty()) currentRoad else if (isConnected) "Yamaha" else "--",
+                    color = if (isConnected) YamahaCyan else TextSecondary,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1
@@ -625,6 +647,7 @@ fun TelemetryGridCard(
 fun TFTMirrorPreviewCard(
     bitmap: android.graphics.Bitmap?,
     isStreaming: Boolean,
+    isConnected: Boolean,
     currentRoad: String,
     zoomDescription: String,
     onToggleStreaming: () -> Unit,
@@ -669,7 +692,15 @@ fun TFTMirrorPreviewCard(
                     .aspectRatio(480f / 234f)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color.Black)
-                    .border(1.5.dp, if (isStreaming) NeonGreen else YamahaCyan.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    .border(
+                        1.5.dp,
+                        when {
+                            isStreaming && isConnected -> NeonGreen
+                            isStreaming && !isConnected -> NeonOrange
+                            else -> YamahaCyan.copy(alpha = 0.4f)
+                        },
+                        RoundedCornerShape(12.dp)
+                    )
                     .clickable { onToggleStreaming() },
                 contentAlignment = Alignment.Center
             ) {
@@ -684,7 +715,15 @@ fun TFTMirrorPreviewCard(
                         CircularProgressIndicator(color = YamahaCyan, modifier = Modifier.size(28.dp))
                         Spacer(modifier = Modifier.height(8.dp))
                         Text("Bản đồ TFT 480 × 234", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        Text("Chạm để phát luồng live lên xe", color = TextSecondary, fontSize = 11.sp)
+                        Text(
+                            text = when {
+                                isStreaming && isConnected -> "Đang chiếu live lên đồng hồ xe"
+                                isStreaming && !isConnected -> "Đang đợi kết nối với xe..."
+                                else -> "Chạm để phát luồng live lên xe"
+                            },
+                            color = if (isStreaming && !isConnected) NeonOrange else TextSecondary,
+                            fontSize = 11.sp
+                        )
                     }
                 }
 
