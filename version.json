@@ -1,6 +1,6 @@
 {
-  "versionCode": 61,
-  "versionName": "0.5.31",
-  "releaseNotes": "1. Bỏ nút 'Lưu thử' ở thẻ Vị trí đỗ xe trên trang chủ.\n2. Bản đồ tab Bản đồ hiển thị đầy đủ giao thông Google Live Traffic bằng Osmdroid (không còn bị màn hình be trống kể cả khi API Key Google Maps bị giới hạn).\n3. Sửa lỗi tìm kiếm địa điểm: hỗ trợ chuẩn mã hóa URL, tự động định vị bias Việt Nam và phím Search trên bàn phím ảo.\n4. Đã ẩn/bỏ nút Cây xăng khi nhấn vào ô tìm kiếm địa điểm.\n5. Sửa nhãn thu phóng góc trái dưới bản đồ trang chủ: hiển thị chuẩn '1.6km (Khu vực)' cho Lv.15 và '3.0km (Thành phố)' cho Lv.14.",
+  "versionCode": 62,
+  "versionName": "0.5.32",
+  "releaseNotes": "Sửa lỗi bản đồ nhỏ ở tab trang chủ cứ quay vòng load khi mở app: Luồng nạp ngói và dựng hình xem trước (preview loop) giờ đây tự động kích hoạt ngay khi mở ứng dụng với định vị GPS tức thời, hiển thị bản đồ trực tiếp kèm trạng thái 'XEM TRƯỚC (CHẠM ĐỂ CHIẾU)' rõ ràng, không còn bị quay vòng tải vô tận.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

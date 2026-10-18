@@ -131,6 +131,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         setupCCUCallbacks()
         startLocationUpdates()
         updateZoomText()
+        ensurePreviewLoopRunning()
 
         // Khởi động foreground service duy trì kết nối nền
         try {
@@ -147,6 +148,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ccuManager.onFindGasStation = { navEngine.fetchNearbyGasStations() }
         ccuManager.onBikeConnected = {
             ccuManager.log("Đã kết nối xe máy Yamaha - Bắt đầu truyền luồng màn hình")
+            if (_isStreaming.value) {
+                ccuManager.startStreaming()
+            }
         }
         ccuManager.onBikeDisconnected = {
             val loc = navEngine.currentLocation.value
@@ -178,6 +182,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         try {
+            fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                if (loc != null) {
+                    val latLng = LatLng(loc.latitude, loc.longitude)
+                    val speedKmh = loc.speed * 3.6
+                    navEngine.updateLocation(latLng, speedKmh, loc.bearing)
+                    streamRenderer.updateLocation(latLng, loc.bearing)
+                }
+            }
             fusedLocationClient.requestLocationUpdates(request, locationCallback!!, Looper.getMainLooper())
         } catch (_: SecurityException) {}
     }
@@ -212,9 +224,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // TFT STREAM RENDERER ACTIONS
     // =========================================================================
 
-    fun startStreaming() {
+    fun ensurePreviewLoopRunning() {
         streamRenderer.startStreamingLoop(
-            getLocation = { navEngine.currentLocation.value },
+            getLocation = { navEngine.currentLocation.value ?: LatLng(10.7769, 106.7009) },
             getCourse = { navEngine.currentHeading.value },
             getActiveRoute = { navEngine.activeRoute.value },
             getAlternativeRoutes = { navEngine.alternativeRoutes.value },
@@ -222,17 +234,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             getSpeed = { navEngine.currentSpeedKmh.value },
             getIsRerouting = { navEngine.isRerouting.value },
             onFrameReady = { jpegBytes ->
-                ccuManager.sendJPEGFrame(jpegBytes)
+                if (_isStreaming.value && (ccuManager.state.value == BikeConnectionState.CONNECTED || ccuManager.state.value == BikeConnectionState.STREAMING)) {
+                    ccuManager.sendJPEGFrame(jpegBytes)
+                }
             }
         )
-        ccuManager.startStreaming()
+    }
+
+    fun startStreaming() {
         _isStreaming.value = true
+        if (ccuManager.state.value == BikeConnectionState.CONNECTED) {
+            ccuManager.startStreaming()
+        }
+        ensurePreviewLoopRunning()
     }
 
     fun stopStreaming() {
-        streamRenderer.stopStreamingLoop()
-        ccuManager.stopStreaming()
         _isStreaming.value = false
+        ccuManager.stopStreaming()
     }
 
     fun toggleStreaming() {
@@ -245,14 +264,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun zoomIn() {
         streamRenderer.zoomIn { jpegBytes ->
-            ccuManager.sendJPEGFrame(jpegBytes)
+            if (_isStreaming.value && (ccuManager.state.value == BikeConnectionState.CONNECTED || ccuManager.state.value == BikeConnectionState.STREAMING)) {
+                ccuManager.sendJPEGFrame(jpegBytes)
+            }
         }
         updateZoomText()
     }
 
     fun zoomOut() {
         streamRenderer.zoomOut { jpegBytes ->
-            ccuManager.sendJPEGFrame(jpegBytes)
+            if (_isStreaming.value && (ccuManager.state.value == BikeConnectionState.CONNECTED || ccuManager.state.value == BikeConnectionState.STREAMING)) {
+                ccuManager.sendJPEGFrame(jpegBytes)
+            }
         }
         updateZoomText()
     }

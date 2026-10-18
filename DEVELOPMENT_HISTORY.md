@@ -570,3 +570,24 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - Loại bỏ nút *"Cây xăng"* khỏi danh sách phím tắt nhanh bên dưới ô tìm kiếm của `LiveNavigationScreen.kt`. Hàng phím tắt chỉ hiển thị "Về nhà", "Đi làm" nếu người dùng đã lưu các địa điểm này.
   5. **Sửa nhãn hiển thị mức thu phóng Lv.14 và Lv.15 ở góc trái dưới tab Trang chủ**:
      - Trong `MainViewModel.kt`, bổ sung ánh xạ cụ thể cho các mức zoom 15 (`"1.6km (Khu vực)"`) và 14 (`"3.0km (Thành phố)"`), dứt điểm hoàn toàn việc bị rơi vào nhánh mặc định `else -> "Lv.$zoom"`.
+
+---
+
+### 📌 Quy tắc 10: Tự động chạy luồng dựng hình xem trước Bản đồ TFT Mirror khi khởi động app (v0.5.32 Build 62)
+- **Hiện tượng lỗi**: Mỗi lần mở app, ô bản đồ nhỏ (TFT Mirror Preview) ở tab Trang chủ cứ hiển thị vòng quay tròn đang tải (CircularProgressIndicator) mãi mãi; chỉ khi người dùng chạm vào ô đó thì bản đồ mới chịu hiện ra.
+- **Nguyên nhân gốc rễ**:
+  - Khung hình `lastFrameBitmap` ban đầu là `null`.
+  - Hàm bắt đầu dựng khung hình `streamRenderer.startStreamingLoop(...)` trước đây chỉ được kích hoạt khi người dùng bấm vào ô hoặc bắt đầu chiếu lên xe (`onToggleStreaming()`).
+  - Thẻ `TFTMirrorPreviewCard` khi `bitmap == null` sẽ vẽ `CircularProgressIndicator`, tạo cảm giác ứng dụng bị đơ / đang tải bất tận dù thực chất luồng render chưa từng được khởi chạy.
+- **Giải pháp chuẩn hóa**:
+  1. **Khởi chạy Preview Loop ngay trong `init` của `MainViewModel`**:
+     - Ngay khi app khởi động, gọi `ensurePreviewLoopRunning()` để khởi động chu kỳ render ngói bản đồ (Google Maps Traffic 480 × 234).
+     - `getLocation` fallback tức thì về tọa độ mặc định (`LatLng(10.7769, 106.7009)`) nếu GPS chưa fix xong trong tích tắc đầu tiên, đồng thời truy vấn `fusedLocationClient.lastLocation` ngay lập tức.
+     - Khung hình đầu tiên có sẵn trong vòng < 100ms, lập tức lấp đầy ô xem trước bằng hình ảnh bản đồ thực tế có đường phố và mật độ giao thông, loại bỏ hoàn toàn vòng xoay chờ tải.
+  2. **Tách biệt giữa Dựng hình xem trước trên điện thoại và Truyền phát Bluetooth sang xe**:
+     - Luồng render chạy liên tục để điện thoại luôn có bản đồ live cập nhật.
+     - Chỉ khi `_isStreaming.value == true` và xe đang kết nối Bluetooth (`CONNECTED` hoặc `STREAMING`), các gói JPEG mới được nén và gửi qua SPP/BLE sang đồng hồ xe.
+  3. **Hiển thị huy hiệu trạng thái (Status Badge) trực quan ở góc trên bên trái**:
+     - Khi chưa bật chiếu: Hiển thị `XEM TRƯỚC (CHẠM ĐỂ CHIẾU)` (màu xanh Yamaha Cyan).
+     - Khi đã bật chiếu nhưng chưa có xe: Hiển thị `○ CHỜ KẾT NỐI XE...` (màu cam neon, viền sáng cam).
+     - Khi đang chiếu thực tế lên đồng hồ xe: Hiển thị `● LIVE TFT` (màu xanh neon, viền sáng xanh).

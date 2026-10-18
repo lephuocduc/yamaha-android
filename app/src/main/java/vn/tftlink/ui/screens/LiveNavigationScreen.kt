@@ -884,7 +884,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                         text = when {
                             isStreaming && isBikeConnected -> "LIVE TFT"
                             isStreaming && !isBikeConnected -> "CHỜ XE..."
-                            else -> "PAUSED"
+                            else -> "XEM TRƯỚC"
                         },
                         color = when {
                             isStreaming && isBikeConnected -> NeonGreen

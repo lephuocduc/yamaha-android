@@ -734,19 +734,34 @@ fun TFTMirrorPreviewCard(
                     )
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = YamahaCyan, modifier = Modifier.size(28.dp))
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Bản đồ TFT 480 × 234", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            text = when {
-                                isStreaming && isConnected -> "Đang chiếu live lên đồng hồ xe"
-                                isStreaming && !isConnected -> "Đang đợi kết nối với xe..."
-                                else -> "Chạm để phát luồng live lên xe"
-                            },
-                            color = if (isStreaming && !isConnected) NeonOrange else TextSecondary,
-                            fontSize = 11.sp
-                        )
+                        CircularProgressIndicator(color = YamahaCyan, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Đang tải bản đồ TFT...", color = TextSecondary, fontSize = 11.sp)
                     }
+                }
+
+                // Streaming status badge placed at TopStart
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = when {
+                            isStreaming && isConnected -> "● LIVE TFT"
+                            isStreaming && !isConnected -> "○ CHỜ KẾT NỐI XE..."
+                            else -> "XEM TRƯỚC (CHẠM ĐỂ CHIẾU)"
+                        },
+                        color = when {
+                            isStreaming && isConnected -> NeonGreen
+                            isStreaming && !isConnected -> NeonOrange
+                            else -> YamahaCyan
+                        },
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 // Zoom description badge placed cleanly at BottomStart
