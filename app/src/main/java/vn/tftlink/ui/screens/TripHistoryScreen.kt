@@ -125,20 +125,38 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
                         border = BorderStroke(1.dp, NeonGreen)
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .clip(CircleShape)
-                                        .background(NeonGreen)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    "ĐANG THEO DÕI LỘ TRÌNH XE CHẠY",
-                                    color = NeonGreen,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(10.dp)
+                                            .clip(CircleShape)
+                                            .background(NeonGreen)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        "ĐANG THEO DÕI LỘ TRÌNH XE CHẠY",
+                                        color = NeonGreen,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        val loc = viewModel.currentLocation.value ?: viewModel.navEngine.getEffectiveLocation()
+                                        viewModel.tripManager.endTripSession(loc)
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, NeonRed.copy(alpha = 0.7f))
+                                ) {
+                                    Text("Kết thúc", color = NeonRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                             Spacer(modifier = Modifier.height(10.dp))
                             Row(

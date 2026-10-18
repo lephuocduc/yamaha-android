@@ -125,13 +125,13 @@ import androidx.compose.material.icons.filled.BookmarkAdd
 import vn.tftlink.R
 
 private val GoogleTrafficTileSource = object : OnlineTileSourceBase(
-    "GoogleTraffic",
+    "GoogleTrafficHD",
     1, 20, 256, ".png",
     arrayOf(
-        "https://mt0.google.com/vt/lyrs=m,traffic&hl=vi",
-        "https://mt1.google.com/vt/lyrs=m,traffic&hl=vi",
-        "https://mt2.google.com/vt/lyrs=m,traffic&hl=vi",
-        "https://mt3.google.com/vt/lyrs=m,traffic&hl=vi"
+        "https://mt0.google.com/vt/lyrs=m,traffic&hl=vi&scale=2",
+        "https://mt1.google.com/vt/lyrs=m,traffic&hl=vi&scale=2",
+        "https://mt2.google.com/vt/lyrs=m,traffic&hl=vi&scale=2",
+        "https://mt3.google.com/vt/lyrs=m,traffic&hl=vi&scale=2"
     )
 ) {
     override fun getTileURLString(pMapTileIndex: Long): String {
@@ -143,13 +143,13 @@ private val GoogleTrafficTileSource = object : OnlineTileSourceBase(
 }
 
 private val GoogleSatelliteTileSource = object : OnlineTileSourceBase(
-    "GoogleSatellite",
+    "GoogleSatelliteHD",
     1, 20, 256, ".jpg",
     arrayOf(
-        "https://mt0.google.com/vt/lyrs=y,traffic&hl=vi",
-        "https://mt1.google.com/vt/lyrs=y,traffic&hl=vi",
-        "https://mt2.google.com/vt/lyrs=y,traffic&hl=vi",
-        "https://mt3.google.com/vt/lyrs=y,traffic&hl=vi"
+        "https://mt0.google.com/vt/lyrs=y,traffic&hl=vi&scale=2",
+        "https://mt1.google.com/vt/lyrs=y,traffic&hl=vi&scale=2",
+        "https://mt2.google.com/vt/lyrs=y,traffic&hl=vi&scale=2",
+        "https://mt3.google.com/vt/lyrs=y,traffic&hl=vi&scale=2"
     )
 ) {
     override fun getTileURLString(pMapTileIndex: Long): String {
@@ -192,6 +192,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
     var droppedPin by remember { mutableStateOf<LatLng?>(null) }
     var droppedPinTitle by remember { mutableStateOf("Điểm đã ghim") }
     var droppedPinAddress by remember { mutableStateOf("") }
+    var isFollowingLocation by remember { mutableStateOf(true) }
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -234,20 +235,22 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
         }
     }
 
-    // Tự động bám theo vị trí người lái khi đang dẫn đường (Turn-by-Turn)
-    LaunchedEffect(currentLoc, isNavigating) {
+    // Tự động bám theo vị trí xe khi bật chế độ theo dõi (vuốt bản đồ để tạm dừng bám)
+    LaunchedEffect(currentLoc, isFollowingLocation, isNavigating) {
         val loc = currentLoc ?: return@LaunchedEffect
-        if (isNavigating) {
+        if (isFollowingLocation) {
             osmdroidMapView?.controller?.animateTo(
                 GeoPoint(loc.latitude, loc.longitude),
-                17.5,
-                600L
+                if (isNavigating) 17.5 else 16.5,
+                500L
             )
         }
     }
 
     LaunchedEffect(heading, isNorthUp) {
-        osmdroidMapView?.mapOrientation = if (isNorthUp) 0f else -heading
+        osmdroidMapView?.let { mv ->
+            mv.mapOrientation = if (isNorthUp) 0f else -heading
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -263,6 +266,14 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     controller.setZoom(16.0)
                     val start = currentLoc ?: defaultPosition
                     controller.setCenter(GeoPoint(start.latitude, start.longitude))
+
+                    // Khi người dùng chạm kéo bản đồ thủ công, tạm dừng tự động bám tâm vị trí
+                    setOnTouchListener { _, event ->
+                        if (event.action == android.view.MotionEvent.ACTION_MOVE && event.pointerCount >= 1) {
+                            isFollowingLocation = false
+                        }
+                        false
+                    }
 
                     val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
@@ -373,7 +384,9 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                         title = "Vị trí của bạn"
                         icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_marker_user_puck)
                         setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_CENTER)
-                        rotation = if (isNorthUp) 0f else heading
+                        // Khi North-Up: bản đồ cố định hướng Bắc -> mũi tên puck xoay theo heading của xe.
+                        // Khi Head-Tracking: bản đồ xoay theo -heading -> mũi tên puck luôn hướng thẳng lên phía trước (0°).
+                        rotation = if (isNorthUp) heading else 0f
                     }
                     mapView.overlays.add(userMarker)
                 }
@@ -977,31 +990,40 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
 
             FloatingActionButton(
                 onClick = {
+                    val targetIsNorthUp = !isNorthUp
                     viewModel.toggleNorthUp()
                     osmdroidMapView?.let { mv ->
-                        mv.mapOrientation = if (!isNorthUp) 0f else -heading
+                        mv.mapOrientation = if (targetIsNorthUp) 0f else -heading
                     }
+                    val msg = if (targetIsNorthUp) "Chế độ bản đồ: Cố định hướng Bắc (North-Up)" else "Chế độ bản đồ: Xoay theo đầu xe (Head Tracking)"
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 },
                 containerColor = DarkSurfaceCard,
-                contentColor = if (isNorthUp) NeonOrange else YamahaCyan,
+                contentColor = if (isNorthUp) TextPrimary else NeonGreen,
                 shape = CircleShape,
                 modifier = Modifier.size(46.dp)
             ) {
-                Icon(Icons.Default.Explore, contentDescription = "Xoay bản đồ", modifier = Modifier.size(22.dp))
+                Icon(
+                    imageVector = if (isNorthUp) Icons.Default.Explore else Icons.Default.Navigation,
+                    contentDescription = if (isNorthUp) "Cố định hướng Bắc" else "Theo hướng lái xe",
+                    modifier = Modifier.size(22.dp)
+                )
             }
 
             FloatingActionButton(
                 onClick = {
+                    isFollowingLocation = true
                     currentLoc?.let { loc ->
                         osmdroidMapView?.controller?.animateTo(
                             GeoPoint(loc.latitude, loc.longitude),
                             if (isNavigating) 17.5 else 16.5,
-                            600L
+                            500L
                         )
                     }
+                    Toast.makeText(context, "Đang bám theo vị trí xe", Toast.LENGTH_SHORT).show()
                 },
                 containerColor = DarkSurfaceCard,
-                contentColor = YamahaCyan,
+                contentColor = if (isFollowingLocation) YamahaCyan else TextSecondary,
                 shape = CircleShape,
                 modifier = Modifier.size(46.dp)
             ) {

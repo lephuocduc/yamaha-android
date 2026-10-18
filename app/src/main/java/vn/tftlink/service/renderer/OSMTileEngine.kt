@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import vn.tftlink.util.NetworkUtils
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
@@ -63,10 +64,12 @@ class OSMTileEngine private constructor(context: Context) {
             cacheDirectory.mkdirs()
         }
 
-        httpClient = OkHttpClient.Builder()
-            .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(5, TimeUnit.SECONDS)
-            .build()
+        httpClient = NetworkUtils.configureSsl(
+            OkHttpClient.Builder()
+                .connectTimeout(8, TimeUnit.SECONDS)
+                .readTimeout(8, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
+        ).build()
     }
 
     fun clearMemoryCache() {

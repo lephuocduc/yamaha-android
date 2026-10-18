@@ -147,6 +147,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         try {
             BikeForegroundService.start(application)
         } catch (_: Exception) {}
+
+        // Đồng bộ vòng đời chuyến đi với trạng thái dẫn đường
+        viewModelScope.launch {
+            navEngine.isNavigating.collect { isNav ->
+                if (!isNav && tripManager.isRecordingSession.value) {
+                    val loc = navEngine.currentLocation.value ?: navEngine.getEffectiveLocation()
+                    tripManager.endTripSession(loc)
+                }
+            }
+        }
     }
 
     private fun setupCCUCallbacks() {
@@ -184,9 +194,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val loc = result.lastLocation ?: return
                 val latLng = LatLng(loc.latitude, loc.longitude)
                 val speedKmh = loc.speed * 3.6
+                val bearing = if (loc.hasBearing()) loc.bearing else 0f
 
-                navEngine.updateLocation(latLng, speedKmh, loc.bearing)
-                streamRenderer.updateLocation(latLng, loc.bearing)
+                navEngine.updateLocation(latLng, speedKmh, bearing)
+                streamRenderer.updateLocation(latLng, bearing)
                 tripManager.updateLocation(latLng, speedKmh)
             }
         }
@@ -371,15 +382,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startNavigation() {
         navEngine.startActiveNavigation()
-        val loc = navEngine.currentLocation.value
-        if (loc != null) {
-            tripManager.startTripSession(loc, connectedBike.value?.name ?: "Yamaha NMAX")
-        }
+        val loc = navEngine.currentLocation.value ?: navEngine.getEffectiveLocation()
+        tripManager.startTripSession(loc, connectedBike.value?.name ?: "Yamaha NMAX")
     }
 
     fun stopNavigation() {
         navEngine.stopNavigation()
         ccuManager.stopNavigationOnTFT()
+        val loc = navEngine.currentLocation.value ?: navEngine.getEffectiveLocation()
+        tripManager.endTripSession(loc)
     }
 
     fun toggleNorthUp() {

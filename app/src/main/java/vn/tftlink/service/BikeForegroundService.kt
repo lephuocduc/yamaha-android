@@ -159,8 +159,9 @@ class BikeForegroundService : Service() {
                 val loc = result.lastLocation ?: return
                 val latLng = LatLng(loc.latitude, loc.longitude)
                 val speedKmh = loc.speed * 3.6
+                val bearing = if (loc.hasBearing()) loc.bearing else 0f
 
-                navEngine.updateLocation(latLng, speedKmh, loc.bearing)
+                navEngine.updateLocation(latLng, speedKmh, bearing)
                 tripManager.updateLocation(latLng, speedKmh)
             }
         }
@@ -170,27 +171,40 @@ class BikeForegroundService : Service() {
         } catch (_: SecurityException) {}
     }
 
+    private fun getStatusNotificationText(): String {
+        val bikeName = ccuManager.connectedBike.value?.name ?: "Yamaha NMAX"
+        return when (ccuManager.state.value) {
+            BikeConnectionState.CONNECTED, BikeConnectionState.STREAMING -> "Đã kết nối $bikeName • Đang hoạt động"
+            BikeConnectionState.CONNECTING, BikeConnectionState.AUTHENTICATING -> "Đang kết nối tới $bikeName..."
+            else -> "Chưa kết nối xe • Đang chờ bật khóa điện"
+        }
+    }
+
     private fun observeSystemStates() {
         // Cập nhật thông báo theo trạng thái xe
         serviceScope.launch {
             ccuManager.state.collectLatest { state ->
                 val bikeName = ccuManager.connectedBike.value?.name ?: "Yamaha NMAX"
-                when (state) {
-                    BikeConnectionState.CONNECTED, BikeConnectionState.STREAMING -> {
-                        updateNotification("Đã kết nối $bikeName • Đang hoạt động")
+                if (!navEngine.isNavigating.value) {
+                    updateNotification(getStatusNotificationText())
+                }
+                if (state == BikeConnectionState.DISCONNECTED) {
+                    // Tự động ghi lại vị trí đỗ xe khi ngắt kết nối
+                    navEngine.currentLocation.value?.let { loc ->
+                        parkingManager.recordParkingLocation(loc, bikeName)
+                        tripManager.endTripSession(loc)
                     }
-                    BikeConnectionState.CONNECTING, BikeConnectionState.AUTHENTICATING -> {
-                        updateNotification("Đang kết nối tới $bikeName...")
-                    }
-                    BikeConnectionState.DISCONNECTED -> {
-                        updateNotification("Chưa kết nối xe • Đang chờ bật khóa điện")
-                        // Tự động ghi lại vị trí đỗ xe khi ngắt kết nối
-                        navEngine.currentLocation.value?.let { loc ->
-                            parkingManager.recordParkingLocation(loc, bikeName)
-                            tripManager.endTripSession(loc)
-                        }
-                    }
-                    else -> {}
+                }
+            }
+        }
+
+        // Theo dõi trạng thái dẫn đường: khi tắt dẫn đường, hoàn nguyên ngay lập tức thông báo về trạng thái xe
+        serviceScope.launch {
+            navEngine.isNavigating.collectLatest { isNav ->
+                if (!isNav) {
+                    updateNotification(getStatusNotificationText())
+                    val loc = navEngine.currentLocation.value ?: navEngine.getEffectiveLocation()
+                    tripManager.endTripSession(loc)
                 }
             }
         }

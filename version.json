@@ -1,6 +1,6 @@
 {
-  "versionCode": 67,
-  "versionName": "0.5.37",
-  "releaseNotes": "1) Sửa địa chỉ Nhà/Cơ quan: bấm biểu tượng bút chì hoặc nhấn giữ thẻ, gõ địa chỉ thật và chọn gợi ý (hoặc dùng vị trí hiện tại) để lưu đúng toạ độ; 2) Nút Trạm xăng hiển thị danh sách 3 trạm xăng thật gần nhất kèm khoảng cách, chạm để dẫn đường; 3) Sửa vỡ layout mục Chẩn đoán & Nhật ký; 4) Ghi rõ lý do Valhalla lỗi trong log và tự thử lại với cấu hình đơn giản hơn; chặn lập lộ trình khi điểm đến trùng vị trí hiện tại.",
+  "versionCode": 68,
+  "versionName": "0.5.38",
+  "releaseNotes": "1) Sửa lỗi tắt dẫn đường nhưng thanh thông báo Android và tab Lộ trình vẫn ghi đang dẫn đường: tự động hoàn nguyên thông báo về trạng thái xe và kết thúc ghi phiên; 2) Nâng cấp bản đồ độ phân giải cao Retina HD (512x512) với Google Live Traffic; 3) Sửa nút North-Up & Head Tracking: mũi tên xoay chuẩn xác theo hướng xe, tự động bám tâm vị trí và nút bám lại mượt mà; 4) Khắc phục triệt để lỗi SSLHandshakeException của Valhalla routing trên Android 9 bằng bộ cấu hình TLS thích ứng.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

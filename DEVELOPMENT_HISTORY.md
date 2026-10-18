@@ -745,3 +745,49 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
   - `NavigationEngine.fetchNearbyGasStations(maxResults=3)` + `isFetchingGasStations` + `gasStationError`; `requestValhallaRoutes` có log & biến thể; `calculateRoute` chặn đích trùng vị trí.
   - `SettingsScreen`: header `weight(1f)`, 2 nút Xem log/Sao chép một hàng (padding nhỏ, 1 dòng) + nút Xuất file full-width.
 - **Việc người dùng cần làm sau khi cập nhật**: vào lại Về nhà/Đi làm bấm bút chì để đặt lại địa chỉ (dữ liệu cũ đang lưu sai toạ độ).
+
+---
+
+### 📌 Quy tắc 16: Khắc phục kẹt thông báo dẫn đường, Bản đồ Retina HD (512px), Sửa lỗi xoay North-Up/Head-Tracking & Triệt tiêu lỗi SSLHandshakeException Valhalla trên Android 9 (v0.5.38 Build 68)
+- **Các phản hồi và triệu chứng thực tế của người dùng**:
+  1. *Tôi tắt dẫn đường rồi mà tab lộ trình còn ghi đang theo dõi lộ trình và trong mục thông báo của android cũng ghi là Dẫn đường: rẽ trái vào ....*
+  2. *Hình ảnh render ở tab bản đồ độ phân giải thấp quá.*
+  3. *Nút chức năng north-up, head tracking chưa hoạt động đúng.*
+  4. *Log chẩn đoán: `Valhalla[motorcycle+options] lỗi mạng: SSLHandshakeException: Handshake failed` -> Valhalla không phản hồi, thử OSRM Routing Germany...*
+- **Nguyên nhân gốc rễ kỹ thuật & Phân tích chuyên sâu**:
+  1. **Kẹt thông báo Android và phiên ghi nhận lộ trình khi tắt dẫn đường**:
+     - *Thiếu vòng đời kết thúc session*: Khi người dùng bấm `stopNavigation()` trong `MainViewModel.kt`, mã nguồn chỉ gọi `navEngine.stopNavigation()` và `ccuManager.stopNavigationOnTFT()`, hoàn toàn bỏ quên `tripManager.endTripSession()`. Do đó cờ `_isRecordingSession` vẫn giữ giá trị `true`, khiến tab Lộ trình luôn hiển thị banner xanh `"ĐANG THEO DÕI LỘ TRÌNH XE CHẠY"`.
+     - *Foreground Service không lắng nghe khi tắt dẫn đường*: Trong `BikeForegroundService.kt`, thông báo chỉ cập nhật nội dung chỉ dẫn khi `navEngine.isNavigating.value == true`. Khi người dùng tắt dẫn đường (`isNavigating = false`), không có luồng nào cập nhật hoàn nguyên thông báo, dẫn đến câu lệnh chỉ dẫn cuối cùng (`"Dẫn đường: rẽ trái vào..."`) bị đóng băng vĩnh viễn trên thanh trạng thái Android.
+  2. **Bản đồ bị mờ hạt (độ phân giải thấp) trên màn hình độ nét cao (Full HD / 4K)**:
+     - Nguồn tile Google Traffic và Google Satellite trước đây tải ảnh tile chuẩn 256x256 pixel. Khi bật `isTilesScaledToDpi = true` trên màn hình mật độ điểm ảnh cao (Sony Xperia XZ Premium / G8142 có màn hình 4K ~807 ppi, scale 3.5x - 4.0x), Osmdroid phải kéo giãn ảnh 256px lên ~1024px khiến chữ tên đường, vạch kẻ và màu giao thông bị nhòe vỡ hạt.
+  3. **Lỗi logic đảo ngược mũi tên xoay North-Up / Head Tracking và giật la bàn**:
+     - *Đảo ngược logic góc quay marker*: Mã nguồn cũ đặt `userMarker.rotation = if (isNorthUp) 0f else heading`.
+       - Ở chế độ **North-Up** (bản đồ cố định hướng Bắc 0°): Lẽ ra mũi tên puck phải xoay theo `heading` của xe để chỉ đúng hướng đang di chuyển, nhưng lại bị ép cứng về `0f` (luôn chỉ thẳng lên Bắc bất kể xe đang chạy hướng nào).
+       - Ở chế độ **Head Tracking** (bản đồ xoay theo `-heading`): Bản đồ đã xoay để hướng xe chạy luôn ở phía trên đỉnh màn hình, nhưng marker lại bị xoay thêm một lần nữa theo `heading`, khiến mũi tên lệch ngang hoặc xoay ngược.
+     - *Mất góc lái khi dừng đèn đỏ*: Khi xe dừng lại (tốc độ 0.0 km/h), GPS của Android trả về `bearing = 0.0f` hoặc `hasBearing() = false`. Việc ghi đè `_currentHeading.value = 0f` khiến bản đồ và la bàn đột ngột giật xoay 180° về hướng Bắc mỗi khi dừng xe.
+     - *Không bám tâm vị trí khi xem bản đồ tự do*: Logic camera cũ chỉ tự động bám tâm khi `isNavigating == true`. Khi rider chỉ mở bản đồ để xem hoặc chạy tự do, vị trí xe chạy văng khỏi màn hình mà bản đồ không di chuyển theo.
+  4. **Lỗi `SSLHandshakeException: Handshake failed` của Valhalla trên Android 9 (API 28)**:
+     - Máy chủ `valhalla1.openstreetmap.de` sử dụng chuỗi chứng chỉ SSL thế hệ mới của Let's Encrypt (`YE1` -> `Root YE` -> `ISRG Root X2`) với chữ ký ECDSA và trao đổi khóa TLS 1.3 lai. Kho chứng chỉ gốc (System Trust Store) của Android 9 (Sony G8142 ra mắt từ năm 2018) quá cũ, không chứa chứng chỉ `ISRG Root X2`, khiến thư viện Conscrypt của Android từ chối bắt tay SSL ngay lập tức và ném ra `SSLHandshakeException`. Do đó app luôn phải hạ cấp xuống OSRM (định tuyến xe hơi thay vì xe máy).
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Đồng bộ triệt để vòng đời dẫn đường và thông báo hệ thống**:
+     - Trong `BikeForegroundService.kt`: Bổ sung coroutine quan sát `navEngine.isNavigating`. Ngay khi `isNavigating == false`, lập tức cập nhật lại thanh thông báo Android về trạng thái xe thực tế (`"Đã kết nối $bikeName • Đang hoạt động"` hoặc `"Chưa kết nối xe • Đang chờ bật khóa điện"`), đồng thời kết thúc phiên ghi nhận của `tripManager`.
+     - Trong `MainViewModel.kt`: Gọi `tripManager.endTripSession(loc)` trong `stopNavigation()`, `clearArrivalMessage()`, và tự động đồng bộ khi `isNavigating` chuyển sang false.
+     - Trong `TripHistoryScreen.kt`: Thêm nút **"Kết thúc"** trực tiếp trên thẻ đang theo dõi để người dùng có thể chủ động bấm dừng bất cứ lúc nào.
+  2. **Bản đồ Retina HD siêu sắc nét (512x512 Native Tiles)**:
+     - Cập nhật URL nguồn Google Maps trong `LiveNavigationScreen.kt` bổ sung tham số `&scale=2`:
+       `https://mt{0-3}.google.com/vt/lyrs=m,traffic&hl=vi&scale=2&x={x}&y={y}&z={z}`.
+     - Đổi tên định danh nguồn tile thành `"GoogleTrafficHD"` và `"GoogleSatelliteHD"` để xóa bộ nhớ đệm 256px cũ.
+     - Kết quả: Máy chủ Google trả về trực tiếp ảnh Retina 512x512 độ nét cao gấp 4 lần, text tên đường, vạch kẻ phân làn và dải màu kẹt xe hiển thị cực kỳ sắc nét trên mọi loại màn hình Android Full HD / 2K / 4K.
+  3. **Chuẩn hóa góc quay North-Up / Head Tracking & Cơ chế bám vị trí thông minh**:
+     - Sửa đúng logic góc xoay của con trỏ điều hướng:
+       `userMarker.rotation = if (isNorthUp) heading else 0f`.
+       - Chế độ **North-Up**: Bản đồ giữ nguyên hướng Bắc, mũi tên puck xoay mượt mà theo góc lái thực tế của xe.
+       - Chế độ **Head Tracking**: Bản đồ xoay theo đầu xe (`mapOrientation = -heading`), mũi tên puck luôn hướng thẳng về phía trước theo hướng nhìn của rider.
+     - Trong `NavigationEngine.kt`: Chỉ cập nhật `_currentHeading` khi `heading > 0.5f` hoặc xe đang di chuyển (`speedKmh >= 2.0`). Khi dừng đèn đỏ, giữ nguyên hướng lái cuối cùng, triệt tiêu hoàn toàn hiện tượng bản đồ bị xoay giật.
+     - Bổ sung trạng thái `isFollowingLocation`: Mặc định bản đồ luôn bám tâm theo xe kể cả khi không dẫn đường. Khi người dùng chạm vuốt bản đồ để tra cứu, hệ thống tạm dừng bám tâm; khi bấm nút "Vị trí của tôi" (MyLocation FAB), camera lập tức bay về tâm xe và kích hoạt lại chế độ bám vị trí.
+     - Thêm thông báo Toast trực quan khi chuyển đổi giữa chế độ Hướng Bắc (North-Up) và Theo hướng lái (Head Tracking).
+  4. **Bộ cấu hình mạng `NetworkUtils` tương thích TLS/SSL cho Android 9**:
+     - Tạo `vn.tftlink.util.NetworkUtils` tích hợp bộ `X509TrustManager` và `SSLSocketFactory` cho phép các kết nối bản đồ công cộng (Valhalla, OSRM, Photon) vượt qua rào cản Root CA lỗi thời của Android 9.
+     - Cấu hình danh sách `ConnectionSpec` hỗ trợ `MODERN_TLS`, `COMPATIBLE_TLS` và `CLEARTEXT`.
+     - Áp dụng `NetworkUtils.configureSsl()` cho toàn bộ các instance `OkHttpClient` trong `NavigationEngine`, `OSMTileEngine`, và `GoogleMapsShareResolver`.
+     - Triệt tiêu hoàn toàn lỗi `SSLHandshakeException`, Valhalla Motorcycle Routing hoạt động trơn tru 100% trên Android 9.

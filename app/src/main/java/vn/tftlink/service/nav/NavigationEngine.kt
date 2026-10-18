@@ -31,6 +31,7 @@ import vn.tftlink.data.model.nav.OSMRoute
 import vn.tftlink.service.ble.YamahaCCUManager
 import vn.tftlink.service.renderer.TFTStreamRenderer
 import vn.tftlink.util.GeoUtils
+import vn.tftlink.util.NetworkUtils
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -68,12 +69,13 @@ class NavigationEngine private constructor(
 
     private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(true)
-        .followRedirects(true)
-        .build()
+    private val httpClient = NetworkUtils.configureSsl(
+        OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(18, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .followRedirects(true)
+    ).build()
     private val gson = Gson()
 
     // CCU & Renderer bindings
@@ -246,7 +248,13 @@ class NavigationEngine private constructor(
         if (!isValidCoordinate(latLng)) return
         _currentLocation.value = latLng
         _currentSpeedKmh.value = speedKmh
-        _currentHeading.value = heading
+        // Chỉ cập nhật heading khi có giá trị hợp lệ (> 0°) hoặc xe đang di chuyển.
+        // Khi đứng yên (đèn đỏ) và GPS gửi heading = 0°, giữ nguyên hướng cũ để bản đồ không bị xoay giật.
+        if (heading > 0.5f || speedKmh >= 2.0 || _currentHeading.value == 0f) {
+            if (heading > 0f) {
+                _currentHeading.value = heading
+            }
+        }
 
         // Lưu vết vị trí cuối cùng để khôi phục ngay khi mở app
         try {
