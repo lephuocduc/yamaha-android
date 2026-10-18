@@ -380,7 +380,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try { _homePlace.value = gson.fromJson(it, SavedPlace::class.java) } catch (_: Exception) {}
         }
         prefs.getString("work_place_json", null)?.let {
-            try { _workPlace.value = gson.fromJson(it, SavedPlace::class.java) } catch (_: Exception {}
+            try { _workPlace.value = gson.fromJson(it, SavedPlace::class.java) } catch (_: Exception) {}
         }
         prefs.getString("fav_places_json", null)?.let {
             try {
