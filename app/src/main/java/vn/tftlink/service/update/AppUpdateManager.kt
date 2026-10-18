@@ -1,10 +1,12 @@
 package vn.tftlink.service.update
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.google.gson.Gson
@@ -149,7 +151,8 @@ class AppUpdateManager(
     fun startDownloadAndInstall(info: AppUpdateInfo) {
         scope.launch(Dispatchers.IO) {
             try {
-                val updateDir = File(context.cacheDir, "updates")
+                val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+                val updateDir = File(baseDir, "updates")
                 if (!updateDir.exists()) {
                     updateDir.mkdirs()
                 }
@@ -227,7 +230,25 @@ class AppUpdateManager(
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                clipData = ClipData.newRawUri("update", apkUri)
             }
+
+            // Cấp quyền đọc URI cho mọi package installer
+            val resInfoList = context.packageManager.queryIntentActivities(
+                installIntent,
+                PackageManager.MATCH_DEFAULT_ONLY
+            )
+            for (resolveInfo in resInfoList) {
+                context.grantUriPermission(
+                    resolveInfo.activityInfo.packageName,
+                    apkUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            try {
+                context.grantUriPermission("com.google.android.packageinstaller", apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                context.grantUriPermission("com.android.packageinstaller", apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {}
 
             context.startActivity(installIntent)
         } catch (e: Exception) {

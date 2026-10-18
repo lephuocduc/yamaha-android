@@ -13,8 +13,8 @@ android {
         applicationId = "vn.tftlink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 54
-        versionName = "0.5.24"
+        versionCode = 55
+        versionName = "0.5.25"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -22,9 +22,22 @@ android {
         }
     }
 
+    signingConfigs {
+        create("customSigning") {
+            storeFile = file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("customSigning")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("customSigning")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
