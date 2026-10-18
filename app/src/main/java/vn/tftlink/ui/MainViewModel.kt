@@ -191,7 +191,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         try {
             // Lấy vị trí ngay lập tức từ LocationManager nếu FusedLocation chưa sẵn sàng
-            val locMgr = application.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            val locMgr = getApplication<Application>().getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             val providers = locMgr?.getProviders(true) ?: emptyList()
             for (p in providers) {
                 val l = locMgr?.getLastKnownLocation(p)
