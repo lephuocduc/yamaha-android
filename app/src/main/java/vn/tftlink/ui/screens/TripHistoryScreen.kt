@@ -1,5 +1,6 @@
 package vn.tftlink.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -120,7 +121,7 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF092916)),
-                        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(NeonGreen))
+                        border = BorderStroke(1.dp, NeonGreen)
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -166,7 +167,7 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+                        border = BorderStroke(1.dp, DarkSurfaceBorder)
                     ) {
                         Row(
                             modifier = Modifier
@@ -200,7 +201,7 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
                         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+                        border = BorderStroke(1.dp, DarkSurfaceBorder)
                     ) {
                         Column(
                             modifier = Modifier
@@ -232,7 +233,7 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
                             Button(
                                 onClick = { viewModel.addSampleTrip() },
                                 colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan.copy(alpha = 0.2f), contentColor = YamahaCyan),
-                                border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(YamahaCyan)),
+                                border = BorderStroke(1.dp, YamahaCyan),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -318,7 +319,7 @@ fun TripRecordCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+        border = BorderStroke(1.dp, DarkSurfaceBorder)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(

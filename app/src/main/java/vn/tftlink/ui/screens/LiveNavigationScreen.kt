@@ -2,6 +2,7 @@ package vn.tftlink.ui.screens
 
 import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -170,7 +171,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard.copy(alpha = 0.95f)),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(YamahaCyan)),
+                    border = BorderStroke(1.dp, YamahaCyan),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Row(
@@ -239,7 +240,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                         .fillMaxWidth()
                         .clickable { showSearchDialog = true },
                     colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard.copy(alpha = 0.9f)),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder)),
+                    border = BorderStroke(1.dp, DarkSurfaceBorder),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Row(

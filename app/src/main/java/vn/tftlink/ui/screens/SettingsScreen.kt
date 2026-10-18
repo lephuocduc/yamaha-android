@@ -1,5 +1,6 @@
 package vn.tftlink.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -106,7 +107,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+                border = BorderStroke(1.dp, DarkSurfaceBorder)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text("DÒNG XE YAMAHA", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -167,7 +168,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+                border = BorderStroke(1.dp, DarkSurfaceBorder)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text("BẢN ĐỒ & THUẬT TOÁN DẪN ĐƯỜNG", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -235,7 +236,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+                border = BorderStroke(1.dp, DarkSurfaceBorder)
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("THÔNG TIN PHẦN CỨNG & KẾT NỐI", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -275,7 +276,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+                border = BorderStroke(1.dp, DarkSurfaceBorder)
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("THÔNG TIN PHẦN MỀM", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)

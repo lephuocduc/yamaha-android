@@ -1,5 +1,6 @@
 package vn.tftlink.data.local
 
+import android.content.Context
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Insert

@@ -3,6 +3,7 @@ package vn.tftlink.ui.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -168,7 +169,7 @@ fun MainDashboardScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF072412)),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(NeonGreen))
+                    border = BorderStroke(1.dp, NeonGreen)
                 ) {
                     Row(
                         modifier = Modifier
@@ -347,7 +348,7 @@ fun MainDashboardScreen(
                                         showScanDialog = false
                                     },
                                 colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(YamahaCyan))
+                                border = BorderStroke(1.dp, YamahaCyan)
                             ) {
                                 Row(
                                     modifier = Modifier.padding(12.dp),
@@ -504,7 +505,7 @@ fun ConnectionStatusCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+        border = BorderStroke(1.dp, DarkSurfaceBorder)
     ) {
         Row(
             modifier = Modifier
@@ -543,7 +544,7 @@ fun ConnectionStatusCard(
                     containerColor = statusColor.copy(alpha = 0.2f),
                     contentColor = statusColor
                 ),
-                border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(statusColor)),
+                border = BorderStroke(1.dp, statusColor),
                 shape = RoundedCornerShape(20.dp)
             ) {
                 Text(
@@ -570,7 +571,7 @@ fun TelemetryGridCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+        border = BorderStroke(1.dp, DarkSurfaceBorder)
     ) {
         Row(
             modifier = Modifier
@@ -633,7 +634,7 @@ fun TFTMirrorPreviewCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+        border = BorderStroke(1.dp, DarkSurfaceBorder)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -745,7 +746,7 @@ fun ParkingLocationCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+        border = BorderStroke(1.dp, DarkSurfaceBorder)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -833,7 +834,7 @@ fun ParkingLocationCard(
                     OutlinedButton(
                         onClick = onOpenGoogleMaps,
                         shape = RoundedCornerShape(8.dp),
-                        border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(NeonGreen))
+                        border = BorderStroke(1.dp, NeonGreen)
                     ) {
                         Text("Google Maps", color = NeonGreen, fontSize = 12.sp)
                     }
@@ -858,7 +859,7 @@ fun ParkingLocationCard(
                     Button(
                         onClick = onSaveCurrentLocation,
                         colors = ButtonDefaults.buttonColors(containerColor = NeonPurple.copy(alpha = 0.2f), contentColor = NeonPurple),
-                        border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(NeonPurple)),
+                        border = BorderStroke(1.dp, NeonPurple),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text("Lưu thử", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -924,7 +925,7 @@ fun QuickActionButton(
     Card(
         modifier = modifier.clickable { onClick() },
         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+        border = BorderStroke(1.dp, DarkSurfaceBorder)
     ) {
         Column(
             modifier = Modifier
@@ -950,7 +951,7 @@ fun FavoritePlacesSection(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkSurfaceBorder))
+        border = BorderStroke(1.dp, DarkSurfaceBorder)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
