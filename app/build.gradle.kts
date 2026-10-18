@@ -1,5 +1,3 @@
-import java.util.Base64
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -13,14 +11,14 @@ android {
 
     val mapsApiKey = System.getenv("MAPS_API_KEY")
         ?: (project.findProperty("MAPS_API_KEY") as? String)
-        ?: String(Base64.getDecoder().decode("QUl6YVN5Q3p5czd1cGtqcTJsbWtFVldUNGJyVTRhYVpMNUdYOUJ3"))
+        ?: "DEFAULT_NCONNECT_KEY"
 
     defaultConfig {
         applicationId = "vn.tftlink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 59
-        versionName = "0.5.29"
+        versionCode = 60
+        versionName = "0.5.30"
 
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
 

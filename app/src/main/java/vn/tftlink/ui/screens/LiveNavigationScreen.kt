@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
@@ -80,6 +81,7 @@ import androidx.compose.ui.unit.sp
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.UrlTileProvider
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapType
@@ -87,7 +89,10 @@ import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
+import com.google.maps.android.compose.TileOverlay
 import com.google.maps.android.compose.rememberCameraPositionState
+import java.net.URL
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 import vn.tftlink.data.model.bike.BikeConnectionState
 import vn.tftlink.data.model.location.SavedPlace
@@ -135,6 +140,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
     var showMiniPreview by remember { mutableStateOf(true) }
     var isSearchFocused by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var mapStyle by remember { mutableStateOf("traffic") } // "traffic", "satellite", "osm"
     var droppedPin by remember { mutableStateOf<LatLng?>(null) }
     var droppedPinTitle by remember { mutableStateOf("Điểm đã ghim") }
     var droppedPinAddress by remember { mutableStateOf("") }
@@ -163,14 +169,14 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 1. Google Maps Map View
+        // 1. Google Maps Map View with High-Resolution Raster Tile Overlay
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
             properties = MapProperties(
                 isMyLocationEnabled = true,
-                isTrafficEnabled = true,
-                mapType = MapType.NORMAL
+                isTrafficEnabled = false,
+                mapType = MapType.NONE // Using TileOverlay avoids empty beige canvas when Google Cloud vector API key is missing/revoked
             ),
             uiSettings = MapUiSettings(
                 compassEnabled = true,
@@ -189,6 +195,31 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                 }
             }
         ) {
+            // Live Tile Overlay (Google Traffic / Google Satellite / OpenStreetMap)
+            TileOverlay(
+                tileProvider = remember(mapStyle) {
+                    object : UrlTileProvider(256, 256) {
+                        override fun getTileUrl(x: Int, y: Int, zoom: Int): URL? {
+                            val server = abs((x + y) % 4)
+                            return try {
+                                when (mapStyle) {
+                                    "satellite" -> URL("https://mt$server.google.com/vt/lyrs=y,traffic&hl=vi&x=$x&y=$y&z=$zoom")
+                                    "osm" -> {
+                                        val subdomains = arrayOf("a", "b", "c")
+                                        val s = subdomains[abs((x + y) % subdomains.size)]
+                                        URL("https://$s.tile.openstreetmap.org/$zoom/$x/$y.png")
+                                    }
+                                    else -> URL("https://mt$server.google.com/vt/lyrs=m,traffic&hl=vi&x=$x&y=$y&z=$zoom")
+                                }
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+                    }
+                },
+                transparency = 0f,
+                zIndex = 0f
+            )
             // Draw Alternative Routes in Dark / Gray Polyline
             alternativeRoutes.forEach { altRoute ->
                 Polyline(
@@ -685,6 +716,27 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                 .padding(end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // Map Layer Toggle (Traffic / Satellite / OSM)
+            FloatingActionButton(
+                onClick = {
+                    mapStyle = when (mapStyle) {
+                        "traffic" -> "satellite"
+                        "satellite" -> "osm"
+                        else -> "traffic"
+                    }
+                },
+                containerColor = DarkSurfaceCard,
+                contentColor = when (mapStyle) {
+                    "satellite" -> NeonGreen
+                    "osm" -> NeonOrange
+                    else -> YamahaCyan
+                },
+                shape = CircleShape,
+                modifier = Modifier.size(46.dp)
+            ) {
+                Icon(Icons.Default.Layers, contentDescription = "Đổi lớp bản đồ", modifier = Modifier.size(22.dp))
+            }
+
             FloatingActionButton(
                 onClick = { viewModel.toggleNorthUp() },
                 containerColor = DarkSurfaceCard,

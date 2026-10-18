@@ -67,6 +67,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.android.gms.maps.model.LatLng
@@ -514,15 +515,20 @@ fun ConnectionStatusCard(
         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
         border = BorderStroke(1.dp, DarkSurfaceBorder)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box(
                         modifier = Modifier
                             .size(10.dp)
@@ -538,42 +544,50 @@ fun ConnectionStatusCard(
                         },
                         color = TextPrimary,
                         fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = when {
-                        isStreaming && !isConnected -> "Đã bật chiếu TFT. Vui lòng kết nối với xe để truyền hình ảnh."
-                        connectedBike != null -> "Xe: ${connectedBike.name}"
-                        else -> "Bật chìa khóa xe để tự động kết nối..."
-                    },
-                    color = if (connectedBike != null) NeonGreen else if (isStreaming && !isConnected) NeonOrange else TextSecondary,
-                    fontSize = 12.sp
-                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Button(
+                    onClick = onConnectClick,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = statusColor.copy(alpha = 0.2f),
+                        contentColor = statusColor
+                    ),
+                    border = BorderStroke(1.dp, statusColor),
+                    shape = RoundedCornerShape(20.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = when {
+                            isStreaming -> "Dừng chiếu"
+                            state == BikeConnectionState.CONNECTED -> "Chiếu lên xe"
+                            state == BikeConnectionState.AUTHENTICATING -> "Bắt đầu chiếu"
+                            state == BikeConnectionState.SCANNING -> "Đang dò..."
+                            else -> "Kết nối xe"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
             }
 
-            Button(
-                onClick = onConnectClick,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = statusColor.copy(alpha = 0.2f),
-                    contentColor = statusColor
-                ),
-                border = BorderStroke(1.dp, statusColor),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Text(
-                    text = when {
-                        isStreaming -> "Dừng chiếu"
-                        state == BikeConnectionState.CONNECTED -> "Chiếu lên xe"
-                        state == BikeConnectionState.AUTHENTICATING -> "Bắt đầu chiếu"
-                        state == BikeConnectionState.SCANNING -> "Đang dò..."
-                        else -> "Kết nối xe"
-                    },
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                )
-            }
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = when {
+                    isStreaming && !isConnected -> "Đã bật chiếu TFT. Vui lòng kết nối với xe để truyền hình ảnh."
+                    connectedBike != null -> "Xe: ${connectedBike.name}"
+                    else -> "Bật chìa khóa xe để tự động kết nối..."
+                },
+                color = if (connectedBike != null) NeonGreen else if (isStreaming && !isConnected) NeonOrange else TextSecondary,
+                fontSize = 12.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }
@@ -665,20 +679,33 @@ fun TFTMirrorPreviewCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f, fill = false),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Icon(Icons.Default.Navigation, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Bản đồ chiếu lên xe (TFT Mirror)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(
+                        "Bản đồ TFT Mirror",
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 if (currentRoad.isNotEmpty()) {
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "▲ $currentRoad",
                         color = NeonGreen,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier
                             .background(NeonGreen.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
                     )
                 }
             }
@@ -727,23 +754,30 @@ fun TFTMirrorPreviewCard(
                     }
                 }
 
-                // Zoom controls overlay
+                // Zoom description badge placed cleanly at BottomStart
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(8.dp)
+                        .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = zoomDescription,
+                        color = YamahaCyan,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+
+                // Zoom controls (+ / -) placed at BottomEnd (never overlaps with zoom label)
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = zoomDescription,
-                        color = YamahaCyan,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 3.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
                     Box(
                         modifier = Modifier
                             .size(28.dp)
@@ -755,7 +789,7 @@ fun TFTMirrorPreviewCard(
                     ) {
                         Text("+", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Box(
                         modifier = Modifier
                             .size(28.dp)

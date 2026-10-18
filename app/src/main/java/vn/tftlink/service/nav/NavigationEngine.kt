@@ -182,14 +182,15 @@ class NavigationEngine(
             delay(250) // Debounce
             try {
                 val encoded = URLEncoder.encode(trimmed, "UTF-8")
-                var urlStr = "$PHOTON_URL?q=$encoded&limit=12&lang=vi"
+                // Photon rejects lang=vi with HTTP 400. Omitting lang searches natively in Vietnamese.
+                var urlStr = "$PHOTON_URL?q=$encoded&limit=15"
                 _currentLocation.value?.let { loc ->
                     urlStr += "&lat=${loc.latitude}&lon=${loc.longitude}"
                 }
 
                 val request = Request.Builder()
                     .url(urlStr)
-                    .header("User-Agent", "NConnect-Yamaha-Android/1.0")
+                    .header("User-Agent", "NConnect-Yamaha-Android/1.0 (contact: info@tftlink.vn)")
                     .build()
 
                 val response = httpClient.newCall(request).execute()
@@ -214,7 +215,7 @@ class NavigationEngine(
                     val props = f.optJSONObject("properties") ?: JSONObject()
                     val name = props.optString("name", trimmed)
                     val street = props.optString("street", "")
-                    val district = props.optString("district", props.optString("county", ""))
+                    val district = props.optString("district", props.optString("county", props.optString("locality", "")))
                     val city = props.optString("city", props.optString("state", "Việt Nam"))
 
                     val parts = listOf(street, district, city).filter { it.isNotBlank() }
@@ -230,9 +231,13 @@ class NavigationEngine(
                     )
                 }
 
-                withContext(Dispatchers.Main) {
-                    _searchResults.value = items
-                    _isSearching.value = false
+                if (items.isEmpty()) {
+                    fallbackNominatimSearch(trimmed)
+                } else {
+                    withContext(Dispatchers.Main) {
+                        _searchResults.value = items
+                        _isSearching.value = false
+                    }
                 }
             } catch (e: Exception) {
                 fallbackNominatimSearch(trimmed)
@@ -244,10 +249,11 @@ class NavigationEngine(
         withContext(Dispatchers.IO) {
             try {
                 val encoded = URLEncoder.encode(query, "UTF-8")
-                val url = "https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=10&accept-language=vi"
+                val url = "https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=10&countrycodes=vn&addressdetails=1"
                 val request = Request.Builder()
                     .url(url)
-                    .header("User-Agent", "NConnect-Yamaha-Android/1.0")
+                    .header("User-Agent", "NConnect-Yamaha-Android/1.0 (contact: info@tftlink.vn)")
+                    .header("Accept", "application/json")
                     .build()
 
                 val response = httpClient.newCall(request).execute()
@@ -257,11 +263,15 @@ class NavigationEngine(
 
                 for (i in 0 until array.length()) {
                     val obj = array.getJSONObject(i)
-                    val name = obj.optString("display_name").split(",").firstOrNull()?.trim() ?: query
+                    val name = obj.optString("name").ifBlank {
+                        obj.optString("display_name").split(",").firstOrNull()?.trim() ?: query
+                    }
                     val address = obj.optString("display_name")
-                    val lat = obj.optDouble("lat")
-                    val lon = obj.optDouble("lon")
-                    items.add(SavedPlace(name = name, address = address, latitude = lat, longitude = lon))
+                    val lat = obj.optDouble("lat", 0.0)
+                    val lon = obj.optDouble("lon", 0.0)
+                    if (lat != 0.0 && lon != 0.0) {
+                        items.add(SavedPlace(name = name, address = address, latitude = lat, longitude = lon))
+                    }
                 }
 
                 withContext(Dispatchers.Main) {

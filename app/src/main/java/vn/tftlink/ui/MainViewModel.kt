@@ -73,7 +73,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isStreaming = MutableStateFlow(false)
     val isStreaming: StateFlow<Boolean> = _isStreaming.asStateFlow()
 
-    private val _zoomDescription = MutableStateFlow("ZOOM: 200m (OSM 18)")
+    private val _zoomDescription = MutableStateFlow("200m (Chuẩn)")
     val zoomDescription: StateFlow<String> = _zoomDescription.asStateFlow()
 
     // GPS & Navigation State Flows
@@ -260,11 +260,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun updateZoomText() {
         val zoom = streamRenderer.currentZoomLevel
         _zoomDescription.value = when (zoom) {
-            19 -> "ZOOM: 100m (OSM 19 - Cận cảnh ngã tư)"
-            18 -> "ZOOM: 200m (OSM 18 - Chuẩn dẫn đường)"
-            17 -> "ZOOM: 400m (OSM 17 - Toàn cảnh khu vực)"
-            16 -> "ZOOM: 800m (OSM 16 - Tuyến đường dài)"
-            else -> "ZOOM: ${zoom}"
+            19 -> "100m (Cận cảnh)"
+            18 -> "200m (Chuẩn)"
+            17 -> "400m (Toàn cảnh)"
+            16 -> "800m (Đường dài)"
+            else -> "Lv.$zoom"
         }
     }
 

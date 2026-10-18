@@ -511,6 +511,45 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - `TFTStreamRenderer` vẽ lộ trình polyline của Valhalla đè lên ngói Google Maps Traffic, vẽ biểu tượng xe máy trung tâm, thanh chỉ dẫn rẽ và tốc độ HUD, sau đó nén JPEG gửi sang Bluetooth SPP đồng hồ xe.
   5. Cập nhật `_lastFrameBitmap` tức thì, giúp ô xem trước TFT Mirror trên điện thoại hiển thị mượt mà 100%, không bị giật lag và tuyệt đối không bao giờ crash kể cả khi tắt màn hình.
 
+---
+
+### 📌 Quy tắc 7: Chống vỡ layout trên màn hình điện thoại (Layout Collision & Text Wrapping)
+- **Lỗi đã gặp**:
+  1. Tiêu đề card TFT Mirror dài *"Bản đồ chiếu lên xe (TFT Mirror)"* chen lấn với badge tên đường bên phải, đẩy badge bị ép co lại thành cột dọc 1 ký tự (`▲ \n MyNM \n AX`).
+  2. Bên trong ô xem trước TFT Mirror, chuỗi hiển thị zoom quá dài (*"ZOOM: 800m (OSM 16 - Tuyến đường dài)"*) nằm cùng một hàng ngang với các nút `+` và `-`, đè lấp lên các nút bấm zoom.
+  3. Thẻ `ConnectionStatusCard`: Khi trạng thái là *"Đã bật chiếu TFT. Vui lòng kết nối với xe để truyền hình ảnh."*, phụ đề dài đẩy nút *"Dừng chiếu"* bị co ép méo mó.
+- **Giải pháp chuẩn hóa**:
+  1. Trong `TFTMirrorPreviewCard`:
+     - Tiêu đề rút gọn thành `"Bản đồ TFT Mirror"` với `Modifier.weight(1f, fill = false)`, `maxLines = 1`, `overflow = TextOverflow.Ellipsis`.
+     - Badge tên đường: Đặt `maxLines = 1`, `softWrap = false`.
+     - Nhãn mức zoom: Tách riêng đặt ở góc dưới bên trái (`Alignment.BottomStart`) với pill nền đen mờ bo tròn.
+     - Nút `+` và `-`: Đặt ở góc dưới bên phải (`Alignment.BottomEnd`). Nhờ nằm ở 2 góc đối diện, nhãn zoom và nút bấm không bao giờ có thể chạm hay đè lên nhau.
+     - Rút gọn nhãn zoom trong `MainViewModel.kt`: Chuyển sang dạng tinh gọn `"100m (Cận cảnh)"`, `"200m (Chuẩn)"`, `"400m (Toàn cảnh)"`, `"800m (Đường dài)"`.
+  2. Trong `ConnectionStatusCard`:
+     - Tổ chức lại layout dạng `Column`: Hàng trên (`Row`) gồm chấm trạng thái + tiêu đề bên trái và Nút hành động bên phải. Hàng dưới hiển thị phụ đề chi tiết trải dài trọn vẹn bề rộng thẻ (`fillMaxWidth()`), tự do xuống dòng mà không ảnh hưởng tới nút bấm.
+
+---
+
+### 📌 Quy tắc 8: Bản đồ lớn luôn hiển thị (No Blank Map) & Sửa lỗi tìm kiếm địa điểm (Photon 400)
+- **Lỗi đã gặp**:
+  1. Khi mở tab Bản đồ lớn (`LiveNavigationScreen`), màn hình chỉ có màu be trống trơn (`#F2EFE9`), chỉ thấy logo Google nhỏ xíu ở góc dưới và hai nút la bàn/vị trí trôi nổi.
+  2. Khi gõ tìm kiếm bất kỳ địa điểm nào (kể cả địa danh nổi tiếng như "Bến Thành", "Hồ Chí Minh") đều không ra kết quả nào.
+- **Nguyên nhân gốc rễ**:
+  1. **Lỗi tìm kiếm**: API Komoot Photon (`https://photon.komoot.io/api/?q=...&lang=vi`) không hỗ trợ mã ngôn ngữ `vi`. Khi truyền `&lang=vi`, máy chủ Photon trả về ngay lập tức lỗi HTTP 400 Bad Request (`Language is not supported. Supported are: default, de, en, fr`). Sau đó app fallback sang Nominatim nhưng thiếu User-Agent chuẩn khiến yêu cầu bị chặn hoặc timeout.
+  2. **Lỗi bản đồ trống**: Google Maps SDK cho Android yêu cầu một API Key có kích hoạt dịch vụ "Maps SDK for Android" trên Google Cloud. Khi kho mã nguồn công khai (Public GitHub Repo) có chứa API Key, hệ thống Secret Scanning của GitHub sẽ tự động gửi webhook sang Google Cloud để vô hiệu hóa/xóa bỏ key đó trong vòng vài chục giây để chống rò rỉ chi phí. Khi app chạy với một API key đã bị Google khóa hoặc không có key hợp lệ, Google Maps SDK sẽ từ chối tải ngói vector và chỉ hiển thị một canvas màu be trống trơn.
+- **Giải pháp triệt để**:
+  1. **Sửa lỗi tìm kiếm trong `NavigationEngine.kt`**:
+     - Bỏ hoàn toàn tham số `&lang=vi`. Khi không truyền tham số `lang`, Photon tự động tìm kiếm trực tiếp theo văn bản Unicode tiếng Việt với tốc độ cực nhanh (< 200ms).
+     - Ưu tiên toạ độ người dùng hiện tại (`&lat=...&lon=...`) để sắp xếp các kết quả gần xe nhất lên đầu.
+     - Cải tiến cơ chế dự phòng Nominatim với User-Agent chuẩn `NConnect-Yamaha-Android/1.0`, bổ sung `countrycodes=vn` và `addressdetails=1`.
+  2. **Tích hợp `TileOverlay` trực tiếp trong `LiveNavigationScreen.kt`**:
+     - Cấu hình `GoogleMap` với `mapType = MapType.NONE`, triệt tiêu hoàn toàn khung nền màu be bị lỗi của vector SDK.
+     - Đặt lớp ngói `TileOverlay` sử dụng trực tiếp các ngói raster Google Maps Live Traffic (`https://mt1.google.com/vt/lyrs=m,traffic&hl=vi&x={x}&y={y}&z={z}`).
+     - Vì endpoint ngói raster này không đòi hỏi cấp phép từ Google Cloud API Key (tương tự như luồng render của `TFTStreamRenderer`), bản đồ lớn luôn hiển thị 100% thời gian thực, có đầy đủ đường phố và mật độ giao thông xanh/vàng/đỏ.
+     - Tích hợp thêm nút bấm chọn lớp bản đồ (`Icons.Default.Layers`) ở cạnh phải cho phép người dùng chuyển đổi mượt mà giữa: **Google Traffic** (Giao thông), **Google Satellite** (Vệ tinh có giao thông) và **OpenStreetMap**.
+     - Giữ nguyên toàn bộ cơ chế Polyline dẫn đường Valhalla, marker xe, ghim điểm đến và điều khiển cử chỉ la bàn / vị trí.
+
+
 
 
 

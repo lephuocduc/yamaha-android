@@ -1,6 +1,6 @@
 {
-  "versionCode": 59,
-  "versionName": "0.5.29",
-  "releaseNotes": "Sửa lỗi văng ứng dụng khi chiếu Google Maps: Chuyển toàn bộ luồng chiếu Google Maps sang Raster Tile Pipeline (XYZ) nền thuần túy vẽ bằng Canvas, tích hợp lớp giao thông LIVE thời gian thực và thuật toán định tuyến xe máy Valhalla chuẩn xác, triệt tiêu 100% crash từ headless MapView.",
+  "versionCode": 60,
+  "versionName": "0.5.30",
+  "releaseNotes": "Sửa lỗi layout bị vỡ ở tab Trang chủ (tiêu đề TFT Mirror, nhãn tuyến đường và nút zoom không còn đè lên nhau, thẻ kết nối xe gọn gàng). Sửa lỗi tab Bản đồ bị trống và tìm kiếm không ra địa chỉ: Tích hợp Google Maps Traffic TileOverlay trực tiếp vào bản đồ lớn không cần API Key, sửa lỗi Photon search loại bỏ lang=vi để tìm kiếm địa điểm tiếng Việt siêu tốc.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }
