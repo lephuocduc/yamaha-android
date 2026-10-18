@@ -562,7 +562,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sb.appendLine("Thiết bị: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE}, API ${android.os.Build.VERSION.SDK_INT})")
         sb.appendLine("Trạng thái kết nối xe: ${connectionState.value}")
         sb.appendLine("Xe đang kết nối: ${connectedBike.value?.name ?: "Chưa kết nối"} (${connectedBike.value?.address ?: "N/A"})")
-        sb.appendLine("Ắc quy xe: ${telemetry.value.batteryVoltage} V | Nhiệt độ máy: ${telemetry.value.coolantTemp} °C | Odo: ${telemetry.value.odometerKm} km")
+        sb.appendLine("Ắc quy xe: ${telemetry.value.batteryVoltage} V | Nhiệt độ máy: ${telemetry.value.engineTemperature} °C | Vòng tua: ${telemetry.value.rpm} RPM | Nhiên liệu: ${telemetry.value.fuelPercent}%")
         val loc = currentLocation.value ?: navEngine.getEffectiveLocation()
         sb.appendLine("Toạ độ GPS hiện tại: ${loc.latitude}, ${loc.longitude}")
         sb.appendLine("Tốc độ GPS: ${currentSpeedKmh.value} km/h | Hướng lái: ${currentHeading.value}°")
