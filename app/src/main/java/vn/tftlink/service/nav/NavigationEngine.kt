@@ -32,6 +32,7 @@ import vn.tftlink.service.ble.YamahaCCUManager
 import vn.tftlink.service.renderer.TFTStreamRenderer
 import vn.tftlink.util.GeoUtils
 import vn.tftlink.util.NetworkUtils
+import java.net.URL
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -645,40 +646,81 @@ class NavigationEngine private constructor(
         )
 
         for (variant in variants) {
+            val jsonPayload = variant.build().toString()
+            var code = 0
+            var body = ""
+
+            // 1. Thử qua OkHttpClient (với Tls13SocketFactory)
             try {
-                val requestBody = variant.build().toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                val requestBody = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
                 val request = Request.Builder()
                     .url(url)
                     .post(requestBody)
-                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) NConnect-Yamaha-Android/1.0")
+                    .header("User-Agent", "TFTLink/0.1 (personal motorcycle display app)")
                     .header("Accept", "application/json")
                     .build()
 
                 val outcome: Pair<Int, String> = httpClient.newCall(request).execute().use { resp ->
                     resp.code to (resp.body?.string().orEmpty())
                 }
-                val (code, body) = outcome
-                if (code in 200..299 && body.isNotBlank()) {
-                    val parsed = try { parseValhallaRoutes(body) } catch (e: Exception) {
-                        ccuManager?.log("Valhalla[${variant.label}] lỗi phân tích JSON: ${e.message}")
-                        emptyList()
-                    }
-                    if (parsed.isNotEmpty()) {
-                        ccuManager?.log("Valhalla[${variant.label}] OK")
-                        return@withContext parsed
-                    }
-                    ccuManager?.log("Valhalla[${variant.label}] HTTP $code nhưng không có tuyến.")
-                } else {
-                    ccuManager?.log("Valhalla[${variant.label}] HTTP $code: ${body.take(160).replace('\n', ' ')}")
-                    // 5xx / 429 là sự cố máy chủ: thử biến thể khác cũng vô ích
-                    if (code >= 500 || code == 429) return@withContext emptyList()
-                }
+                code = outcome.first
+                body = outcome.second
             } catch (e: Exception) {
-                ccuManager?.log("Valhalla[${variant.label}] lỗi mạng: ${e.javaClass.simpleName}: ${e.message}")
-                return@withContext emptyList()
+                // 2. Dự phòng: Thử bằng HttpsURLConnection (GET ?json=...) như app NConnect gốc
+                try {
+                    val fallbackOutcome = fetchValhallaViaHttpURLConnection(jsonPayload)
+                    code = fallbackOutcome.first
+                    body = fallbackOutcome.second
+                    if (code in 200..299 && body.isNotBlank()) {
+                        ccuManager?.log("Valhalla[${variant.label}] qua HttpURLConnection thành công")
+                    }
+                } catch (fallbackEx: Exception) {
+                    ccuManager?.log("Valhalla[${variant.label}] lỗi mạng: ${e.javaClass.simpleName} / HttpURLConnection: ${fallbackEx.javaClass.simpleName}")
+                    return@withContext emptyList()
+                }
+            }
+
+            if (code in 200..299 && body.isNotBlank()) {
+                val parsed = try { parseValhallaRoutes(body) } catch (e: Exception) {
+                    ccuManager?.log("Valhalla[${variant.label}] lỗi phân tích JSON: ${e.message}")
+                    emptyList()
+                }
+                if (parsed.isNotEmpty()) {
+                    ccuManager?.log("Valhalla[${variant.label}] OK")
+                    return@withContext parsed
+                }
+                ccuManager?.log("Valhalla[${variant.label}] HTTP $code nhưng không có tuyến.")
+            } else if (code > 0) {
+                ccuManager?.log("Valhalla[${variant.label}] HTTP $code: ${body.take(160).replace('\n', ' ')}")
+                if (code >= 500 || code == 429) return@withContext emptyList()
             }
         }
         emptyList()
+    }
+
+    /**
+     * Gửi yêu cầu định tuyến Valhalla qua GET ?json=... bằng HttpsURLConnection
+     * theo cơ chế chuẩn của app NConnect gốc.
+     */
+    private fun fetchValhallaViaHttpURLConnection(jsonStr: String): Pair<Int, String> {
+        val encoded = URLEncoder.encode(jsonStr, "UTF-8")
+        val getUrl = URL("$VALHALLA_DEFAULT_URL/route?json=$encoded")
+        val conn = NetworkUtils.openHttpsConnection(getUrl).apply {
+            requestMethod = "GET"
+            setRequestProperty("User-Agent", "TFTLink/0.1 (personal motorcycle display app)")
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Accept-Language", "vi,en")
+            connectTimeout = 8000
+            readTimeout = 15000
+        }
+        return try {
+            val respCode = conn.responseCode
+            val stream = if (respCode in 200..299) conn.inputStream else conn.errorStream
+            val respBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            respCode to respBody
+        } finally {
+            conn.disconnect()
+        }
     }
 
     private fun parseValhallaRoutes(jsonStr: String): List<OSMRoute> {
@@ -823,15 +865,19 @@ class NavigationEngine private constructor(
         val coordPath = "${start.longitude},${start.latitude};${destination.longitude},${destination.latitude}"
         val queryParams = "overview=full&steps=true&geometries=geojson"
 
-        // 1. Thử OSM Routing Germany (Server máy chủ Đức tốc độ cao, không rate-limit)
-        var routes = requestOSMRoutesFromUrl("$OSM_ROUTING_DE_URL/route/v1/driving/$coordPath?$queryParams")
+        // 1. Thử OSM Routing Germany Bike (xe máy / xe hai bánh tránh cao tốc)
+        var routes = requestOSMRoutesFromUrl("https://routing.openstreetmap.de/routed-bike/route/v1/driving/$coordPath?$queryParams")
         if (routes.isNotEmpty()) return@withContext routes
 
-        // 2. Thử Project OSRM HTTPS
+        // 2. Thử OSM Routing Germany Car
+        routes = requestOSMRoutesFromUrl("$OSM_ROUTING_DE_URL/route/v1/driving/$coordPath?$queryParams")
+        if (routes.isNotEmpty()) return@withContext routes
+
+        // 3. Thử Project OSRM HTTPS
         routes = requestOSMRoutesFromUrl("$OSRM_DEFAULT_URL/route/v1/driving/$coordPath?$queryParams")
         if (routes.isNotEmpty()) return@withContext routes
 
-        // 3. Thử Project OSRM HTTP cleartext fallback
+        // 4. Thử Project OSRM HTTP cleartext fallback
         routes = requestOSMRoutesFromUrl("$OSRM_FALLBACK_HTTP_URL/route/v1/driving/$coordPath?$queryParams")
         routes
     }
@@ -840,7 +886,7 @@ class NavigationEngine private constructor(
         return try {
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) NConnect-Yamaha-Android/1.0")
+                .header("User-Agent", "TFTLink/0.1 (personal motorcycle display app)")
                 .header("Accept", "application/json")
                 .build()
 

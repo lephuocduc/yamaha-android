@@ -1,6 +1,6 @@
 {
-  "versionCode": 69,
-  "versionName": "0.5.39",
-  "releaseNotes": "1) Bản đồ: Chạm vào khoảng trống bất kỳ trên bản đồ sẽ tự động ẩn điểm đã ghim; chuẩn hóa 2 nút 'Yêu thích' và 'Dẫn đường' cân đối, vừa vặn không tràn viền; 2) Trang chủ: Khắc phục triệt để vỡ layout thẻ Vị trí đỗ xe (Find My Bike), hai nút 'Dẫn đường' và 'Google Maps' dàn đều 50%-50% vừa khít màn hình, nút đóng/xóa chuyển lên góc phải tiêu đề gọn gàng.",
+  "versionCode": 70,
+  "versionName": "0.5.40",
+  "releaseNotes": "1) Bỏ nút 'Kết thúc' trong thẻ theo dõi ở tab Lộ trình; 2) Khắc phục lỗi SSLHandshakeException khi gọi Valhalla Motorcycle Routing: kích hoạt tường minh TLS 1.3 và toàn bộ cipher suites cho Android 9/các máy cũ; 3) Tích hợp chiến lược dự phòng HttpsURLConnection với GET ?json=... và User-Agent TFTLink chuẩn như app NConnect gốc; 4) Bổ sung phân tầng OSRM routed-bike dành riêng cho xe hai bánh.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

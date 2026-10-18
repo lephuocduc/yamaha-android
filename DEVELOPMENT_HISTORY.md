@@ -814,3 +814,37 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - Chuyển nút hành động Xóa vị trí đỗ (nút đóng [X] kích thước 24.dp) lên góc phải trên cùng của tiêu đề thẻ, cạnh badge thời gian. Vừa tiết kiệm diện tích hàng dưới, vừa đúng quy chuẩn UX thao tác đóng/xóa thẻ.
      - Hàng nút bấm phía dưới giờ chỉ còn 2 nút: **"Dẫn đường"** và **"Google Maps"**. Cả 2 nút được gán `weight(1f)` dàn đều 50% - 50%, chiều cao `38.dp`, góc bo `10.dp`, padding tối ưu và `maxLines = 1`.
      - Hộp hiển thị địa chỉ đỗ xe được làm nổi bật với thẻ bo cong và giới hạn `maxLines = 2, overflow = TextOverflow.Ellipsis`. Thẻ vừa vặn 100% trên mọi kích thước màn hình mà không bao giờ bị vỡ layout.
+
+
+---
+
+### 📌 Quy tắc 18: Loại bỏ nút kết thúc ở tab Lộ trình, Kích hoạt tường minh TLS 1.3 cho Android 9 & Phục hồi cơ chế Valhalla GET chuẩn app NConnect gốc (v0.5.40 Build 70)
+- **Các phản hồi và triệu chứng thực tế của người dùng**:
+  1. *Ko cần nút kết thúc trong tab lộ trình đâu.*
+  2. *Check log, có thể tham khảo app nconnect cũ người ta làm sao:*
+     `[21:56:02] Bắt đầu lập lộ trình: (10.7834622, 106.6284589) -> (10.775412048324256, 106.62898646102542) '61 Đường Hoàng Thiều Hoa'`
+     `[21:56:03] Valhalla[motorcycle+options] lỗi mạng: SSLHandshakeException: Handshake failed`
+     `[21:56:03] Valhalla không phản hồi, thử OSRM Routing Germany...`
+     `[21:56:06] OSRM thành công: 1 tuyến đường.`
+- **Nguyên nhân gốc rễ kỹ thuật & Phân tích chuyên sâu (Dịch ngược đối chiếu NConnect v0.5.2 gốc)**:
+  1. **Nút "Kết thúc" trong thẻ đang theo dõi tab Lộ trình**: Người dùng không muốn can thiệp thủ công kết thúc phiên ghi nhận ở đây vì hệ thống đã tự động đồng bộ theo vòng đời tắt dẫn đường / tắt khóa điện xe máy.
+  2. **Dịch ngược `classes.dex` của NConnect v0.5.2 gốc**:
+     - *Phát hiện 1: Cơ chế gọi Valhalla (`q3/p;->l` & `q3/p;->e`)*: App gốc **không dùng OkHttp POST**, mà sử dụng `java.net.HttpURLConnection` gửi yêu cầu **GET** đến endpoint:
+       `https://valhalla1.openstreetmap.de/route?json=` + `URLEncoder.encode(json, "UTF-8")`
+       với User-Agent: `"TFTLink/0.1 (personal motorcycle display app)"`, cấu hình costing: `"motor_scooter"`, language: `"en-US"`, units: `"kilometers"`.
+     - *Phát hiện 2: Dịch vụ định tuyến đám mây (`q3/t` & `q3/f`)*: App gốc có định tuyến qua Cloudflare Worker `https://nconnect-route.nconnect.workers.dev/route`, nhưng endpoint này đòi hỏi mã kích hoạt bản quyền (`invalid_code`). Khi không có mã, app gốc tự động fallback về Valhalla qua hàm `q3/p;->l`.
+  3. **Nguyên nhân cốt lõi gây lỗi `SSLHandshakeException: Handshake failed` trên Android 9 (Sony G8142 / API 28)**:
+     - Máy chủ `valhalla1.openstreetmap.de` và `routing.openstreetmap.de` đã đóng hoàn toàn giao thức TLS 1.0, 1.1 và 1.2 (thử nghiệm bắt tay TLS 1.2 trả về mã lỗi `SSL alert 40: Handshake Failure`), **bắt buộc kết nối TLS 1.3**.
+     - Trên hệ điều hành Android 9 (phát hành năm 2018), Google đã bổ sung TLS 1.3 vào thư viện Conscrypt, nhưng đặt giá trị mặc định là **TẮT** trong `SSLSocket.getEnabledProtocols()` (chỉ bật `TLSv1`, `TLSv1.1`, `TLSv1.2`).
+     - Khi `OkHttpClient` tạo kết nối, nó lấy giao giữa `connectionSpec.tlsVersions` và `socket.getEnabledProtocols()`. Vì socket chưa bật TLS 1.3 nên OkHttp chỉ gửi gói tin chào ClientHello với chuẩn TLS 1.2. Máy chủ Valhalla lập tức từ chối bắt tay và ngắt kết nối, ném ra lỗi `SSLHandshakeException`.
+     - Đồng thời, danh sách Cipher Suites mặc định của OkHttp trên Android 9 không bao gồm toàn bộ các bộ mã hóa nền tảng mà Conscrypt hỗ trợ cho TLS 1.3.
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Tab Lộ trình (`TripHistoryScreen.kt`)**: Gỡ bỏ nút bấm `OutlinedButton` ("Kết thúc"), giữ cho thanh trạng thái theo dõi lộ trình gọn gàng, thuần túy hiển thị trạng thái và thông số.
+  2. **Bộ SocketFactory `Tls13SocketFactory` (`NetworkUtils.kt`)**:
+     - Tạo `Tls13SocketFactory` bọc ngoài `SSLSocketFactory`: Trong mọi hàm `createSocket()`, tự động kiểm tra `socket.supportedProtocols`. Nếu máy hỗ trợ `"TLSv1.3"`, lập tức thêm tường minh `"TLSv1.3"` vào danh sách `socket.enabledProtocols`.
+     - Thiết lập `ConnectionSpec.allEnabledCipherSuites()` để cho phép toàn bộ cipher suites của Android 9 kết nối mà không bị OkHttp lọc bỏ.
+     - Cung cấp hàm `NetworkUtils.openHttpsConnection(url)` cấu hình sẵn `SSLSocketFactory` và `HostnameVerifier` tin cậy.
+  3. **Chiến lược định tuyến kép (Dual-Strategy) trong `NavigationEngine.kt`)**:
+     - *Tầng 1 (OkHttp TLS 1.3)*: Gửi POST payload Valhalla với bộ `Tls13SocketFactory` mới và User-Agent `"TFTLink/0.1 (personal motorcycle display app)"`.
+     - *Tầng 2 (Dự phòng theo cơ chế app NConnect gốc)*: Nếu OkHttp gặp lỗi mạng/TLS, tự động chuyển sang `fetchValhallaViaHttpURLConnection` gửi GET `?json=...` qua `HttpsURLConnection` đúng chuẩn của app gốc.
+     - *Tầng 3 (Dự phòng OSRM đa tầng)*: Bổ sung endpoint `routed-bike` chuyên cho xe hai bánh của OSM Germany trước khi hạ cấp xuống `routed-car` và Project OSRM HTTP cleartext.
