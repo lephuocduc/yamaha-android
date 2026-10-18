@@ -37,7 +37,11 @@ import vn.tftlink.data.model.nav.OSMRoute
 import vn.tftlink.data.model.trip.TripRecord
 import vn.tftlink.service.ble.YamahaCCUManager
 import vn.tftlink.service.renderer.TFTStreamRenderer
+import vn.tftlink.service.update.AppUpdateInfo
+import vn.tftlink.service.update.AppUpdateManager
+import vn.tftlink.service.update.UpdateStatus
 import vn.tftlink.util.GeoUtils
+import java.io.File
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -426,6 +430,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             tripDao.insertTrip(sample)
         }
     }
+
+    // In-App Software Updater
+    val updateManager = AppUpdateManager.getInstance(getApplication(), viewModelScope)
+    val updateStatus: StateFlow<UpdateStatus> = updateManager.status
+
+    fun checkForUpdate(silentIfUpToDate: Boolean = false) {
+        updateManager.checkForUpdate(silentIfUpToDate)
+    }
+
+    fun startDownloadAndInstall(info: AppUpdateInfo) {
+        updateManager.startDownloadAndInstall(info)
+    }
+
+    fun installApk(file: File) {
+        updateManager.installApk(file)
+    }
+
+    fun resetUpdateStatus() {
+        updateManager.resetStatus()
+    }
+
+    fun getCurrentVersionName(): String = updateManager.getCurrentVersionName()
+    fun getCurrentVersionCode(): Int = updateManager.getCurrentVersionCode()
 
     override fun onCleared() {
         super.onCleared()

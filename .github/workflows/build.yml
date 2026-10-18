@@ -43,6 +43,17 @@ jobs:
           name: yamaha-android-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
 
+      - name: Release Latest APK (OTA Update)
+        if: github.ref == 'refs/heads/main' && success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Bản cập nhật mới nhất (OTA)"
+          body: "Bản dựng tự động từ nhánh main phục vụ tính năng Cập nhật phần mềm trực tiếp trong ứng dụng."
+          files: app/build/outputs/apk/debug/app-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Push failure log to ci-log branch
         if: failure()
         run: |
