@@ -1,6 +1,6 @@
 {
-  "versionCode": 68,
-  "versionName": "0.5.38",
-  "releaseNotes": "1) Sửa lỗi tắt dẫn đường nhưng thanh thông báo Android và tab Lộ trình vẫn ghi đang dẫn đường: tự động hoàn nguyên thông báo về trạng thái xe và kết thúc ghi phiên; 2) Nâng cấp bản đồ độ phân giải cao Retina HD (512x512) với Google Live Traffic; 3) Sửa nút North-Up & Head Tracking: mũi tên xoay chuẩn xác theo hướng xe, tự động bám tâm vị trí và nút bám lại mượt mà; 4) Khắc phục triệt để lỗi SSLHandshakeException của Valhalla routing trên Android 9 bằng bộ cấu hình TLS thích ứng.",
+  "versionCode": 69,
+  "versionName": "0.5.39",
+  "releaseNotes": "1) Bản đồ: Chạm vào khoảng trống bất kỳ trên bản đồ sẽ tự động ẩn điểm đã ghim; chuẩn hóa 2 nút 'Yêu thích' và 'Dẫn đường' cân đối, vừa vặn không tràn viền; 2) Trang chủ: Khắc phục triệt để vỡ layout thẻ Vị trí đỗ xe (Find My Bike), hai nút 'Dẫn đường' và 'Google Maps' dàn đều 50%-50% vừa khít màn hình, nút đóng/xóa chuyển lên góc phải tiêu đề gọn gàng.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

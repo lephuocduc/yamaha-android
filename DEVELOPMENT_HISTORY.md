@@ -791,3 +791,26 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - Cấu hình danh sách `ConnectionSpec` hỗ trợ `MODERN_TLS`, `COMPATIBLE_TLS` và `CLEARTEXT`.
      - Áp dụng `NetworkUtils.configureSsl()` cho toàn bộ các instance `OkHttpClient` trong `NavigationEngine`, `OSMTileEngine`, và `GoogleMapsShareResolver`.
      - Triệt tiêu hoàn toàn lỗi `SSLHandshakeException`, Valhalla Motorcycle Routing hoạt động trơn tru 100% trên Android 9.
+
+---
+
+### 📌 Quy tắc 17: Tự động ẩn điểm ghim khi chạm khoảng trống bản đồ, Chuẩn hóa nút thao tác ghim & Khắc phục triệt để vỡ layout Vị trí đỗ xe (v0.5.39 Build 69)
+- **Các phản hồi và triệu chứng thực tế của người dùng**:
+  1. *Khi nhấn giữ 1 địa điểm trên bản đồ thì nó hiện lên nút yêu thích và nút dẫn đường, 2 nút này layout chưa chuẩn và khi tôi nhấn ra khoảng trống trên bản đồ thì thông tin địa điểm cũ cũng biến mất chứ, hiện tại chỉ có xuất hiện chứ chưa có biến mất.*
+  2. *Layout khúc vị trí đỗ xe ở tab trang chủ bị vỡ layout.*
+- **Nguyên nhân gốc rễ kỹ thuật & Phân tích chuyên sâu**:
+  1. **Không ẩn thẻ địa điểm và điểm ghim khi chạm vào khoảng trống bản đồ**:
+     - Trong `MapEventsOverlay.singleTapConfirmedHelper(p: GeoPoint)` của `LiveNavigationScreen.kt`, trước đây chỉ gán `isSearchFocused = false` để ẩn bàn phím tìm kiếm, hoàn toàn không gán `droppedPin = null`. Do đó, khi người dùng chạm vào bất kỳ khoảng trống nào trên bản đồ, thẻ thông tin toạ độ và marker ghim đỏ vẫn tồn tại vĩnh viễn trên màn hình cho đến khi người dùng phải bấm nút [X] thủ công.
+     - Layout của 2 nút trong thẻ ghim điểm: Nút "Yêu thích" có trọng số `weight(1f)` trong khi nút "Dẫn đường" có trọng số `weight(1.5f)`, không thiết lập `contentPadding` và `maxLines = 1`, khiến ở các màn hình có mật độ hiển thị lớn hoặc font chữ to, 2 nút bị lệch tỉ lệ, chiều cao không đồng nhất và chữ có nguy cơ tràn viền. Cột chứa tiêu đề và địa chỉ thiếu `weight(1f)` nên khi địa chỉ dài sẽ đẩy nút [X] ra sát viền.
+  2. **Vỡ layout thẻ Vị trí đỗ xe (Find My Bike) ở tab Trang chủ (`MainDashboardScreen.kt`)**:
+     - Hàng nút hành động dưới cùng nhồi nhét cùng lúc 3 phần tử vào 1 `Row`: `Button` "Dẫn đường tới xe" (`weight(1f)`), `OutlinedButton` "Google Maps", và `IconButton` Xóa vị trí đỗ.
+     - Theo Material Design, `Button` và `OutlinedButton` mặc định có `horizontal contentPadding = 24.dp` cùng độ dài chuỗi ký tự `"Dẫn đường tới xe"` khá dài. Trên các màn hình Android bề rộng tiêu chuẩn (~360dp - 400dp), tổng chiều rộng của 3 phần tử vượt quá kích thước màn hình khiến chữ bị ép xuống dòng đôi (`"Dẫn đường\ntới xe"`), nút bị bóp méo, phá vỡ cấu trúc thẻ.
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Bản đồ (`LiveNavigationScreen.kt`)**:
+     - Cập nhật `singleTapConfirmedHelper`: Bổ sung `droppedPin = null`. Ngay khi người dùng chạm vào khoảng trống bất kỳ trên bản đồ, điểm ghim và thẻ thông tin lập tức biến mất mượt mà.
+     - Cột văn bản (Tên địa điểm + Địa chỉ) được bọc `modifier = Modifier.weight(1f)` để co giãn tự nhiên, không bao giờ chèn ép nút đóng [X].
+     - Hai nút **"Yêu thích"** và **"Dẫn đường"** được chuẩn hóa: Cùng chia đều tỉ lệ 50% - 50% (`weight(1f)`), cố định chiều cao `40.dp`, góc bo `RoundedCornerShape(10.dp)`, `contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)`, và khóa `maxLines = 1`. Giao diện trở nên cân đối, sắc nét, hiện đại và không bao giờ tràn viền.
+  2. **Thẻ Vị trí đỗ xe (`MainDashboardScreen.kt`)**:
+     - Chuyển nút hành động Xóa vị trí đỗ (nút đóng [X] kích thước 24.dp) lên góc phải trên cùng của tiêu đề thẻ, cạnh badge thời gian. Vừa tiết kiệm diện tích hàng dưới, vừa đúng quy chuẩn UX thao tác đóng/xóa thẻ.
+     - Hàng nút bấm phía dưới giờ chỉ còn 2 nút: **"Dẫn đường"** và **"Google Maps"**. Cả 2 nút được gán `weight(1f)` dàn đều 50% - 50%, chiều cao `38.dp`, góc bo `10.dp`, padding tối ưu và `maxLines = 1`.
+     - Hộp hiển thị địa chỉ đỗ xe được làm nổi bật với thẻ bo cong và giới hạn `maxLines = 2, overflow = TextOverflow.Ellipsis`. Thẻ vừa vặn 100% trên mọi kích thước màn hình mà không bao giờ bị vỡ layout.

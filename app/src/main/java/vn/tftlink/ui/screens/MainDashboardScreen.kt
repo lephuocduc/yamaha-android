@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -1029,33 +1030,46 @@ fun ParkingLocationCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box(
                         modifier = Modifier
-                            .size(24.dp)
+                            .size(26.dp)
                             .clip(RoundedCornerShape(6.dp))
                             .background(NeonPurple),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("P", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("P", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text("VỊ TRÍ ĐỖ XE (FIND MY BIKE)", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
-                        Text("Tự động lưu GPS khi tắt khóa xe", color = TextMuted, fontSize = 10.sp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("VỊ TRÍ ĐỖ XE", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("Tự động lưu khi ngắt kết nối", color = TextMuted, fontSize = 10.sp, maxLines = 1)
                     }
                 }
 
                 parked?.let {
-                    Text(
-                        it.relativeTimeString,
-                        color = NeonPurple,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .background(NeonPurple.copy(alpha = 0.18f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            it.relativeTimeString,
+                            color = NeonPurple,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .background(NeonPurple.copy(alpha = 0.18f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        IconButton(
+                            onClick = onClearParking,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Xóa vị trí đỗ", tint = TextMuted, modifier = Modifier.size(16.dp))
+                        }
+                    }
                 }
             }
 
@@ -1069,24 +1083,45 @@ fun ParkingLocationCard(
 
                 Card(
                     colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.LocationOn, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(16.dp))
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Icon(
+                                Icons.Default.LocationOn,
+                                contentDescription = null,
+                                tint = NeonPurple,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(top = 2.dp)
+                            )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = if (parked.address.isNotEmpty()) parked.address else "${parked.latitude}, ${parked.longitude}",
                                 color = TextPrimary,
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
                             )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.DirectionsWalk, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(14.dp))
+                            Icon(
+                                Icons.Default.DirectionsWalk,
+                                contentDescription = null,
+                                tint = YamahaCyan,
+                                modifier = Modifier.size(14.dp)
+                            )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Cách bạn $distanceText • ${parked.bikeName}", color = YamahaCyan, fontSize = 11.sp)
+                            Text(
+                                text = "Cách bạn $distanceText • ${parked.bikeName}",
+                                color = YamahaCyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
                 }
@@ -1100,22 +1135,52 @@ fun ParkingLocationCard(
                     Button(
                         onClick = onNavigateToBike,
                         colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f)
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                     ) {
-                        Text("Dẫn đường tới xe", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Icon(
+                            Icons.Default.Navigation,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = "Dẫn đường",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            maxLines = 1
+                        )
                     }
 
                     OutlinedButton(
                         onClick = onOpenGoogleMaps,
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, NeonGreen)
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, NeonGreen.copy(alpha = 0.7f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonGreen),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                     ) {
-                        Text("Google Maps", color = NeonGreen, fontSize = 12.sp)
-                    }
-
-                    IconButton(onClick = onClearParking) {
-                        Icon(Icons.Default.Delete, contentDescription = "Xóa", tint = TextMuted)
+                        Icon(
+                            Icons.Default.Map,
+                            contentDescription = null,
+                            tint = NeonGreen,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = "Google Maps",
+                            color = NeonGreen,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            maxLines = 1
+                        )
                     }
                 }
             } else {

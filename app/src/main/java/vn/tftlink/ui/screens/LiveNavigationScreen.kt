@@ -278,6 +278,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
                             isSearchFocused = false
+                            droppedPin = null
                             return true
                         }
 
@@ -734,24 +735,30 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     .padding(start = 16.dp, end = 16.dp, bottom = 80.dp)
                     .fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                border = BorderStroke(1.dp, YamahaCyan),
+                border = BorderStroke(1.2.dp, YamahaCyan),
                 shape = RoundedCornerShape(16.dp)
             ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_marker_google_pin),
                                 contentDescription = null,
                                 tint = Color.Unspecified,
                                 modifier = Modifier.size(24.dp)
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     droppedPinTitle,
                                     color = TextPrimary,
@@ -764,20 +771,23 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                     Text(
                                         droppedPinAddress,
                                         color = TextSecondary,
-                                        fontSize = 12.sp,
+                                        fontSize = 11.sp,
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
                         }
-                        IconButton(onClick = { droppedPin = null }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = null, tint = TextSecondary)
+                        IconButton(
+                            onClick = { droppedPin = null },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Đóng", tint = TextSecondary, modifier = Modifier.size(18.dp))
                         }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         OutlinedButton(
                             onClick = {
@@ -791,14 +801,17 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                 viewModel.addFavoritePlace(favPlace)
                                 Toast.makeText(context, "Đã thêm vào mục Yêu thích", Toast.LENGTH_SHORT).show()
                             },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, YamahaCyan.copy(alpha = 0.6f)),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = YamahaCyan)
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, YamahaCyan.copy(alpha = 0.8f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = YamahaCyan),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                         ) {
-                            Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Yêu thích", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Yêu thích", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                         }
                         Button(
                             onClick = {
@@ -806,12 +819,15 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                 droppedPin = null
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan),
-                            modifier = Modifier.weight(1.5f),
-                            shape = RoundedCornerShape(8.dp)
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                         ) {
-                            Icon(Icons.Default.Directions, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Directions, contentDescription = null, tint = Color.Black, modifier = Modifier.size(17.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Dẫn đường", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Dẫn đường", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
                         }
                     }
                 }
