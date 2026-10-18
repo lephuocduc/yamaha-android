@@ -1,0 +1,8 @@
+<resources>
+    <color name="yamaha_blue">#0033A0</color>
+    <color name="racing_cyan">#00B0FF</color>
+    <color name="status_green">#00C853</color>
+    <color name="dark_background">#121212</color>
+    <color name="surface_dark">#1E1E1E</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>

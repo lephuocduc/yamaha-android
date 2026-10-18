@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">MyNMAX</string>
+    <string name="bike_disconnected">Chưa kết nối</string>
+    <string name="bike_scanning">Đang tìm xe…</string>
+    <string name="bike_connecting">Đang kết nối…</string>
+    <string name="bike_authenticating">Đang xác thực (Handshake)…</string>
+    <string name="bike_connected">Đã kết nối với xe</string>
+    <string name="bike_streaming">Đang truyền bản đồ lên màn hình TFT</string>
+    <string name="bike_error">Lỗi kết nối</string>
+</resources>
