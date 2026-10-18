@@ -489,7 +489,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _sharedDestinationEvent.value = resolved
                     val target = LatLng(resolved.latitude, resolved.longitude)
                     calculateRoute(target, resolved.title, autoStart = true)
-                    navEngine.speakVoice("Đã nhận điểm đến từ Google Maps: ${resolved.title}. Bắt đầu dẫn đường.")
+                    navEngine.speakInstruction("Đã nhận điểm đến từ Google Maps: ${resolved.title}. Bắt đầu dẫn đường.")
                 }
             }
         }

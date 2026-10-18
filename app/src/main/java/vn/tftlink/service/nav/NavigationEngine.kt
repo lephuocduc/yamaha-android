@@ -148,7 +148,7 @@ class NavigationEngine(
         } catch (_: Exception) {}
     }
 
-    private fun speakInstruction(text: String) {
+    fun speakInstruction(text: String) {
         if (!isVoiceGuidanceEnabled || !isTtsReady || text.isBlank()) return
         try {
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "NavGuidance")

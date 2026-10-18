@@ -307,7 +307,7 @@ class GoogleMapClusterRenderer(
         val path = Path()
 
         when (direction) {
-            NavigationDirection.TURN_LEFT, NavigationDirection.TURN_SHARP_LEFT -> {
+            NavigationDirection.LEFT, NavigationDirection.SHARP_LEFT -> {
                 path.moveTo(cx + 10f, cy + 12f)
                 path.lineTo(cx + 10f, cy)
                 path.lineTo(cx - 10f, cy)
@@ -315,7 +315,7 @@ class GoogleMapClusterRenderer(
                 path.lineTo(cx - 10f, cy)
                 path.lineTo(cx - 4f, cy + 6f)
             }
-            NavigationDirection.TURN_RIGHT, NavigationDirection.TURN_SHARP_RIGHT -> {
+            NavigationDirection.RIGHT, NavigationDirection.SHARP_RIGHT -> {
                 path.moveTo(cx - 10f, cy + 12f)
                 path.lineTo(cx - 10f, cy)
                 path.lineTo(cx + 10f, cy)
@@ -323,14 +323,14 @@ class GoogleMapClusterRenderer(
                 path.lineTo(cx + 10f, cy)
                 path.lineTo(cx + 4f, cy + 6f)
             }
-            NavigationDirection.TURN_SLIGHT_LEFT -> {
+            NavigationDirection.SLIGHT_LEFT -> {
                 path.moveTo(cx + 6f, cy + 12f)
                 path.lineTo(cx - 6f, cy - 8f)
                 path.moveTo(cx - 10f, cy - 2f)
                 path.lineTo(cx - 6f, cy - 8f)
                 path.lineTo(cx, cy - 10f)
             }
-            NavigationDirection.TURN_SLIGHT_RIGHT -> {
+            NavigationDirection.SLIGHT_RIGHT -> {
                 path.moveTo(cx - 6f, cy + 12f)
                 path.lineTo(cx + 6f, cy - 8f)
                 path.moveTo(cx + 10f, cy - 2f)
