@@ -33,9 +33,27 @@ import kotlin.math.tan
  * Renderer tạo khung hình Bản Đồ OpenStreetMap cho màn hình TFT xe máy Yamaha
  * Tối ưu hóa 100% chạy nền qua Canvas / Bitmap pipeline, nén JPEG gửi lên xe
  */
-enum class ClusterMapSource(val id: String, val title: String) {
-    GOOGLE_MAPS_TRAFFIC("gmap_traffic", "Google Maps (Mật độ giao thông LIVE - Khuyên dùng)"),
-    OSM_CARTO("osm_carto", "CartoDB Voyager (OpenStreetMap)")
+enum class ClusterMapSource(
+    val id: String,
+    val title: String,
+    val tileUrlTemplate: String,
+    val styleKey: String,
+    val attribution: String
+) {
+    GOOGLE_MAPS_TRAFFIC(
+        "gmap_traffic",
+        "Google Maps (Mật độ giao thông LIVE - Khuyên dùng)",
+        "https://mt1.google.com/vt/lyrs=m,traffic&hl=vi&x={x}&y={y}&z={z}",
+        "gmaps_traffic",
+        "© Google Maps Traffic"
+    ),
+    OSM_CARTO(
+        "osm_carto",
+        "CartoDB Voyager (OpenStreetMap)",
+        "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_4mz7_1_fb3f57cfec3a69a35eb8be87",
+        "voyager",
+        "© OpenStreetMap • CartoDB"
+    )
 }
 
 class TFTStreamRenderer(
@@ -50,10 +68,17 @@ class TFTStreamRenderer(
     }
 
     private val tileEngine = OSMTileEngine.getInstance(context)
-    val googleMapRenderer = GoogleMapClusterRenderer(context, scope, targetWidth, targetHeight)
     private val renderMutex = Mutex()
 
     var clusterMapSource: ClusterMapSource = ClusterMapSource.GOOGLE_MAPS_TRAFFIC
+        set(value) {
+            field = value
+            tileEngine.updateStyle(value.tileUrlTemplate, value.styleKey)
+        }
+
+    init {
+        tileEngine.updateStyle(clusterMapSource.tileUrlTemplate, clusterMapSource.styleKey)
+    }
 
     private val _lastFrameBitmap = MutableStateFlow<Bitmap?>(null)
     val lastFrameBitmap: StateFlow<Bitmap?> = _lastFrameBitmap.asStateFlow()
@@ -137,15 +162,9 @@ class TFTStreamRenderer(
                 val speed = getSpeed()
                 val rerouting = getIsRerouting()
 
-                if (clusterMapSource == ClusterMapSource.GOOGLE_MAPS_TRAFFIC) {
-                    googleMapRenderer.captureFrame(loc, course, route, inst, speed, rerouting) { bytes ->
-                        onFrameReady(bytes)
-                    }
-                } else {
-                    val bytes = renderLiveMapFrame(loc, course, route, alts, inst, speed, rerouting)
-                    if (bytes != null) {
-                        onFrameReady(bytes)
-                    }
+                val bytes = renderLiveMapFrame(loc, course, route, alts, inst, speed, rerouting)
+                if (bytes != null) {
+                    onFrameReady(bytes)
                 }
                 delay(1200)
             }
@@ -193,7 +212,9 @@ class TFTStreamRenderer(
         canvas.drawColor(Color.rgb(20, 26, 36))
 
         if (location == null) {
-            drawFallbackScreen(canvas, "OpenStreetMap", "Đang lấy tín hiệu GPS...", speedKmh)
+            val title = if (clusterMapSource == ClusterMapSource.GOOGLE_MAPS_TRAFFIC) "Google Maps Live Traffic" else "OpenStreetMap"
+            drawFallbackScreen(canvas, title, "Đang lấy tín hiệu GPS...", speedKmh)
+            _lastFrameBitmap.value = bitmap
             return@withLock compressToJpeg(bitmap)
         }
 
@@ -282,8 +303,8 @@ class TFTStreamRenderer(
         // 5. Thanh chỉ dẫn điều hướng Turn-by-Turn phía trên (khoảng cách + tên đường)
         drawTopNavigationBanner(canvas, instruction, isRerouting)
 
-        // 6. Nhãn bản quyền bắt buộc của OpenStreetMap
-        drawOSMAttribution(canvas)
+        // 6. Nhãn bản quyền
+        drawAttribution(canvas)
 
         _lastFrameBitmap.value = bitmap
         compressToJpeg(bitmap)
@@ -510,12 +531,14 @@ class TFTStreamRenderer(
         }
     }
 
-    private fun drawOSMAttribution(canvas: Canvas) {
+    private fun drawAttribution(canvas: Canvas) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.argb(178, 153, 153, 153)
             textSize = 9f
         }
-        canvas.drawText("© OpenStreetMap", targetWidth - 90f, targetHeight - 8f, paint)
+        val text = clusterMapSource.attribution
+        val textWidth = paint.measureText(text)
+        canvas.drawText(text, targetWidth - textWidth - 8f, targetHeight - 8f, paint)
     }
 
     private fun drawFallbackScreen(canvas: Canvas, title: String, subtitle: String, speedKmh: Double) {

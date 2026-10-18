@@ -1,6 +1,6 @@
 {
-  "versionCode": 58,
-  "versionName": "0.5.28",
-  "releaseNotes": "Tối ưu UX & Sửa lỗi logic: 1) Bỏ nút tạo chuyến đi mẫu; 2) Bỏ thông tin phần cứng & kết nối ở Cài đặt; 3) Tìm kiếm địa điểm trực tiếp in-place trên đỉnh bản đồ (bỏ popup lặp); 4) Báo 'Đang đợi kết nối với xe' khi chiếu TFT mà chưa kết nối; 5) Đặt giá trị ắc quy '-- V' khi chưa kết nối thay vì giả lập 12.8V.",
+  "versionCode": 59,
+  "versionName": "0.5.29",
+  "releaseNotes": "Sửa lỗi văng ứng dụng khi chiếu Google Maps: Chuyển toàn bộ luồng chiếu Google Maps sang Raster Tile Pipeline (XYZ) nền thuần túy vẽ bằng Canvas, tích hợp lớp giao thông LIVE thời gian thực và thuật toán định tuyến xe máy Valhalla chuẩn xác, triệt tiêu 100% crash từ headless MapView.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

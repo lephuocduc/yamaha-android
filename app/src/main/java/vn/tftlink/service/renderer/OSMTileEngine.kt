@@ -27,8 +27,9 @@ class OSMTileEngine private constructor(context: Context) {
     companion object {
         const val DEFAULT_CARTO_API_KEY = "cb1_4mz7_1_fb3f57cfec3a69a35eb8be87"
         const val defaultCartoApiKey = DEFAULT_CARTO_API_KEY
-        const val DEFAULT_TILE_URL_TEMPLATE =
-            "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=$DEFAULT_CARTO_API_KEY"
+        const val GOOGLE_MAPS_TRAFFIC_URL_TEMPLATE =
+            "https://mt1.google.com/vt/lyrs=m,traffic&hl=vi&x={x}&y={y}&z={z}"
+        const val DEFAULT_TILE_URL_TEMPLATE = GOOGLE_MAPS_TRAFFIC_URL_TEMPLATE
 
         @Volatile
         private var instance: OSMTileEngine? = null
@@ -45,7 +46,7 @@ class OSMTileEngine private constructor(context: Context) {
     private val httpClient: OkHttpClient
 
     var tileUrlTemplate: String = DEFAULT_TILE_URL_TEMPLATE
-    var currentStyleKey: String = "voyager"
+    var currentStyleKey: String = "gmaps_traffic"
 
     init {
         // RAM Cache: tối đa 400 ngói bitmap
@@ -117,14 +118,15 @@ class OSMTileEngine private constructor(context: Context) {
 
         val request = Request.Builder()
             .url(urlStr)
-            .header("User-Agent", "MyNMAX-Yamaha-Android/1.0 (contact: info@mynmax.app)")
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
+            .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
             .build()
 
         try {
             httpClient.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     val bytes = response.body?.bytes()
-                    if (bytes != null && bytes.size > 1000) {
+                    if (bytes != null && bytes.size > 100) {
                         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                         if (bitmap != null) {
                             val key = "${currentStyleKey}_${z}_${x}_$y"
@@ -137,12 +139,16 @@ class OSMTileEngine private constructor(context: Context) {
                 }
             }
         } catch (_: Exception) {
-            // Fallback: Thử server OpenStreetMap FOSSGIS
+            // Fallback: Thử server CartoDB hoặc OpenStreetMap FOSSGIS
             try {
-                val fbUrl = "https://tile.openstreetmap.de/$z/$x/$y.png"
+                val fbUrl = if (urlStr.contains("google.com")) {
+                    "https://basemaps.cartocdn.com/rastertiles/voyager/$z/$x/$y.png?key=$DEFAULT_CARTO_API_KEY"
+                } else {
+                    "https://tile.openstreetmap.de/$z/$x/$y.png"
+                }
                 val fbReq = Request.Builder()
                     .url(fbUrl)
-                    .header("User-Agent", "MyNMAX-Yamaha-Android/1.0 (contact: info@mynmax.app)")
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36")
                     .build()
                 httpClient.newCall(fbReq).execute().use { fbRes ->
                     if (fbRes.isSuccessful) {

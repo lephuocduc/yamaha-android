@@ -497,6 +497,21 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
   + Giao diện (`TelemetryGridCard`): Khi xe chưa kết nối hoặc `batteryVoltage <= 0.0`, hiển thị `-- V`, vận tốc hiển thị `-- km/h`.
   + `YamahaCCUManager.handleDisconnection()`: Tự động reset `_telemetry.value = BikeTelemetry()`.
 
+### 📌 Quy tắc 6: Truyền hình ảnh Google Maps Live Traffic lên xe & Tách bạch Thuật toán Valhalla
+- **Lỗi đã gặp**: Khi chọn nguồn bản đồ là Google Maps và bấm chiếu màn hình xe (hoặc chạm vào ô TFT Mirror nhỏ), ứng dụng bị văng (crash) ngay lập tức.
+- **Nguyên nhân gốc rễ**: Trước đây sử dụng `GoogleMapClusterRenderer` cố gắng tạo một `MapView` ngầm (headless) bằng `ApplicationContext` và gọi `GoogleMap.snapshot()`. Trong Android Maps SDK, một `MapView` chưa từng được đính kèm vào cây View (`attachToWindow`) của một Activity thì không có OpenGL/Vulkan Surface, khiến `snapshot()` quăng ngoại lệ chí mạng gây crash app.
+- **Giải pháp chuẩn xác học hỏi từ kiến trúc NConnect gốc**:
+  1. Mọi luồng stream hình ảnh lên đồng hồ TFT xe máy (480 × 234) **bắt buộc phải chạy qua đường ống nạp ngói raster (Raster Tile Pipeline) vẽ bằng Canvas/Bitmap thuần túy**, hoàn toàn độc lập với vòng đời giao diện Android UI.
+  2. Google Maps hỗ trợ ngói raster Web Mercator (XYZ) chuẩn tích hợp sẵn lớp giao thông thời gian thực (Traffic Layer) qua endpoint:
+     `https://mt1.google.com/vt/lyrs=m,traffic&hl=vi&x={x}&y={y}&z={z}`
+  3. `OSMTileEngine` đóng vai trò là engine nạp ngói đa nguồn (hỗ trợ cả Google Maps Traffic và CartoDB Voyager), quản lý bộ nhớ đệm 2 tầng (RAM LruCache + Thư mục ổ cứng `OSMTiles_v4`).
+  4. **Tách bạch 2 nhiệm vụ cốt lõi**:
+     - *Hình ảnh nền*: Là ngói bản đồ Google Maps hiển thị mật độ giao thông LIVE (Xanh/Vàng/Đỏ kẹt xe).
+     - *Thuật toán dẫn đường (Routing Engine)*: Vẫn là **Valhalla Motorcycle Routing Engine** (tránh cao tốc ô tô, tránh phí, tối ưu đường xe máy tại Việt Nam, tính toán ETA, tên đường, khoảng cách và các bước rẽ).
+     - `TFTStreamRenderer` vẽ lộ trình polyline của Valhalla đè lên ngói Google Maps Traffic, vẽ biểu tượng xe máy trung tâm, thanh chỉ dẫn rẽ và tốc độ HUD, sau đó nén JPEG gửi sang Bluetooth SPP đồng hồ xe.
+  5. Cập nhật `_lastFrameBitmap` tức thì, giúp ô xem trước TFT Mirror trên điện thoại hiển thị mượt mà 100%, không bị giật lag và tuyệt đối không bao giờ crash kể cả khi tắt màn hình.
+
+
 
 
 

@@ -499,6 +499,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
         streamRenderer.stopStreamingLoop()
-        streamRenderer.googleMapRenderer.onDestroy()
     }
 }
