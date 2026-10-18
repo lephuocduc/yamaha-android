@@ -201,7 +201,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // =========================================================================
 
     fun startStreaming() {
-        streamRenderer.startStreamingLoop()
+        streamRenderer.startStreamingLoop(
+            getLocation = { navEngine.currentLocation.value },
+            getCourse = { navEngine.currentHeading.value },
+            getActiveRoute = { navEngine.activeRoute.value },
+            getAlternativeRoutes = { navEngine.alternativeRoutes.value },
+            getInstruction = { navEngine.currentInstruction.value },
+            getSpeed = { navEngine.currentSpeedKmh.value },
+            getIsRerouting = { navEngine.isRerouting.value },
+            onFrameReady = { jpegBytes ->
+                ccuManager.sendJPEGFrame(jpegBytes)
+            }
+        )
         ccuManager.startStreaming()
         _isStreaming.value = true
     }
@@ -221,12 +232,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun zoomIn() {
-        streamRenderer.zoomIn()
+        streamRenderer.zoomIn { jpegBytes ->
+            ccuManager.sendJPEGFrame(jpegBytes)
+        }
         updateZoomText()
     }
 
     fun zoomOut() {
-        streamRenderer.zoomOut()
+        streamRenderer.zoomOut { jpegBytes ->
+            ccuManager.sendJPEGFrame(jpegBytes)
+        }
         updateZoomText()
     }
 

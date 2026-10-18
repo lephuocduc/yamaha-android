@@ -718,6 +718,10 @@ class YamahaCCUManager(
         }
     }
 
+    fun sendJPEGFrame(jpegData: ByteArray) {
+        sendLiveMapFrameToTFT(jpegData)
+    }
+
     // =========================================================================
     // CẬP NHẬT TÊN ĐƯỜNG & ETA LÊN FOOTER ĐỒNG HỒ XE (TỔ HỢP 5 GÓI CHUẨN)
     // =========================================================================

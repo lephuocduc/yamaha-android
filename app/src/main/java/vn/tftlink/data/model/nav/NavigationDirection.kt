@@ -32,6 +32,9 @@ enum class NavigationDirection(val code: Int) {
             DESTINATION -> "Đến điểm đích"
         }
 
+    val actionPhraseVi: String
+        get() = descriptionVi
+
     val actionPhraseEn: String
         get() = when (this) {
             STRAIGHT -> "straight onto"

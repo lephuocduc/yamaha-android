@@ -44,7 +44,6 @@ import androidx.compose.material.icons.filled.TurnLeft
 import androidx.compose.material.icons.filled.TurnRight
 import androidx.compose.material.icons.filled.TurnSlightLeft
 import androidx.compose.material.icons.filled.TurnSlightRight
-import androidx.compose.material.icons.filled.UturnLeft
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -393,7 +392,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
             Card(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(horizontal = 16.dp, bottom = 80.dp)
+                    .padding(start = 16.dp, end = 16.dp, bottom = 80.dp)
                     .fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
                 border = BorderStroke(1.dp, YamahaCyan),
@@ -725,7 +724,7 @@ private fun getDirectionIcon(direction: NavigationDirection): ImageVector {
         NavigationDirection.RIGHT, NavigationDirection.SHARP_RIGHT -> Icons.Default.TurnRight
         NavigationDirection.SLIGHT_LEFT -> Icons.Default.TurnSlightLeft
         NavigationDirection.LEFT, NavigationDirection.SHARP_LEFT -> Icons.Default.TurnLeft
-        NavigationDirection.U_TURN -> Icons.Default.UturnLeft
+        NavigationDirection.U_TURN -> Icons.Default.Directions
         NavigationDirection.ROUNDABOUT -> Icons.Default.Explore
         NavigationDirection.DESTINATION -> Icons.Default.Check
     }

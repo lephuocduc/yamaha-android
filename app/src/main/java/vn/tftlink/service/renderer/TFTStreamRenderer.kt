@@ -56,6 +56,14 @@ class TFTStreamRenderer(
     val currentOsmZoom: Int
         get() = OSM_ZOOMS[currentZoomIndex.coerceIn(0, OSM_ZOOMS.size - 1)]
 
+    val currentZoomLevel: Int
+        get() = currentOsmZoom
+
+    fun updateLocation(loc: LatLng, bearing: Float) {
+        lastRenderedLocation = loc
+        lastRenderedCourse = bearing
+    }
+
     private var lastRenderedLocation: LatLng? = null
     private var lastRenderedCourse: Float = 0f
     private var lastRenderedRoute: OSMRoute? = null

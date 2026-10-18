@@ -15,6 +15,7 @@ import vn.tftlink.data.model.trip.TripRecord
 import vn.tftlink.service.nav.NavigationEngine
 import vn.tftlink.util.GeoUtils
 import java.util.Locale
+import kotlin.math.roundToInt
 
 class TripHistoryManager(
     private val context: Context,
