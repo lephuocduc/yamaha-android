@@ -179,14 +179,12 @@ class NavigationEngine(
 
         _isSearching.value = true
         searchJob = scope.launch(Dispatchers.IO) {
-            delay(250) // Debounce
+            delay(200) // Debounce
             try {
-                val encoded = URLEncoder.encode(trimmed, "UTF-8")
-                // Photon rejects lang=vi with HTTP 400. Omitting lang searches natively in Vietnamese.
-                var urlStr = "$PHOTON_URL?q=$encoded&limit=15"
-                _currentLocation.value?.let { loc ->
-                    urlStr += "&lat=${loc.latitude}&lon=${loc.longitude}"
-                }
+                // Photon and Nominatim expect %20 for spaces in query string
+                val encoded = URLEncoder.encode(trimmed, "UTF-8").replace("+", "%20")
+                val userLoc = _currentLocation.value ?: LatLng(10.7769, 106.7009)
+                var urlStr = "$PHOTON_URL?q=$encoded&limit=15&lat=${userLoc.latitude}&lon=${userLoc.longitude}"
 
                 val request = Request.Builder()
                     .url(urlStr)
@@ -194,41 +192,38 @@ class NavigationEngine(
                     .build()
 
                 val response = httpClient.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    fallbackNominatimSearch(trimmed)
-                    return@launch
-                }
-
-                val body = response.body?.string() ?: ""
-                val json = JSONObject(body)
-                val features = json.optJSONArray("features") ?: JSONArray()
+                val body = if (response.isSuccessful) response.body?.string() ?: "" else ""
                 val items = mutableListOf<SavedPlace>()
 
-                for (i in 0 until features.length()) {
-                    val f = features.getJSONObject(i)
-                    val geom = f.optJSONObject("geometry") ?: continue
-                    val coords = geom.optJSONArray("coordinates") ?: continue
-                    if (coords.length() < 2) continue
-                    val lon = coords.getDouble(0)
-                    val lat = coords.getDouble(1)
+                if (body.isNotBlank()) {
+                    val json = JSONObject(body)
+                    val features = json.optJSONArray("features") ?: JSONArray()
+                    for (i in 0 until features.length()) {
+                        val f = features.getJSONObject(i)
+                        val geom = f.optJSONObject("geometry") ?: continue
+                        val coords = geom.optJSONArray("coordinates") ?: continue
+                        if (coords.length() < 2) continue
+                        val lon = coords.getDouble(0)
+                        val lat = coords.getDouble(1)
 
-                    val props = f.optJSONObject("properties") ?: JSONObject()
-                    val name = props.optString("name", trimmed)
-                    val street = props.optString("street", "")
-                    val district = props.optString("district", props.optString("county", props.optString("locality", "")))
-                    val city = props.optString("city", props.optString("state", "Việt Nam"))
+                        val props = f.optJSONObject("properties") ?: JSONObject()
+                        val name = props.optString("name", trimmed)
+                        val street = props.optString("street", "")
+                        val district = props.optString("district", props.optString("county", props.optString("locality", "")))
+                        val city = props.optString("city", props.optString("state", "Việt Nam"))
 
-                    val parts = listOf(street, district, city).filter { it.isNotBlank() }
-                    val address = if (parts.isNotEmpty()) parts.joinToString(", ") else city
+                        val parts = listOf(street, district, city).filter { it.isNotBlank() }
+                        val address = if (parts.isNotEmpty()) parts.joinToString(", ") else city
 
-                    items.add(
-                        SavedPlace(
-                            name = name,
-                            address = address,
-                            latitude = lat,
-                            longitude = lon
+                        items.add(
+                            SavedPlace(
+                                name = name,
+                                address = address,
+                                latitude = lat,
+                                longitude = lon
+                            )
                         )
-                    )
+                    }
                 }
 
                 if (items.isEmpty()) {
@@ -248,12 +243,13 @@ class NavigationEngine(
     private suspend fun fallbackNominatimSearch(query: String) {
         withContext(Dispatchers.IO) {
             try {
-                val encoded = URLEncoder.encode(query, "UTF-8")
-                val url = "https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=10&countrycodes=vn&addressdetails=1"
+                val encoded = URLEncoder.encode(query, "UTF-8").replace("+", "%20")
+                val url = "https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=12&countrycodes=vn&addressdetails=1"
                 val request = Request.Builder()
                     .url(url)
-                    .header("User-Agent", "NConnect-Yamaha-Android/1.0 (contact: info@tftlink.vn)")
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) NConnect/1.0 (Yamaha-TFT-Vietnam)")
                     .header("Accept", "application/json")
+                    .header("Accept-Language", "vi,en;q=0.9")
                     .build()
 
                 val response = httpClient.newCall(request).execute()

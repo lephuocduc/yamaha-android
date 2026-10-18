@@ -264,7 +264,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             18 -> "200m (Chuẩn)"
             17 -> "400m (Toàn cảnh)"
             16 -> "800m (Đường dài)"
-            else -> "Lv.$zoom"
+            15 -> "1.6km (Khu vực)"
+            14 -> "3.0km (Thành phố)"
+            else -> "${zoom}00m"
         }
     }
 

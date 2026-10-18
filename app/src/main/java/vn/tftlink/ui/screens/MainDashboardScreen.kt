@@ -244,11 +244,6 @@ fun MainDashboardScreen(
             ParkingLocationCard(
                 parked = parkedLoc,
                 currentLocation = currentLoc,
-                onSaveCurrentLocation = {
-                    currentLoc?.let {
-                        viewModel.recordParkingLocation(it, connectedBike?.name ?: "Yamaha NMAX", "Vị trí đỗ hiện tại")
-                    } ?: viewModel.recordParkingLocation(LatLng(10.7769, 106.7009), "Yamaha NMAX", "Hồ Chí Minh")
-                },
                 onNavigateToBike = {
                     parkedLoc?.let {
                         viewModel.startNavigationTo(it.coordinate, "Xe ${it.bikeName}")
@@ -811,7 +806,6 @@ fun TFTMirrorPreviewCard(
 fun ParkingLocationCard(
     parked: vn.tftlink.data.model.location.ParkedBikeLocation?,
     currentLocation: LatLng?,
-    onSaveCurrentLocation: () -> Unit,
     onNavigateToBike: () -> Unit,
     onOpenGoogleMaps: () -> Unit,
     onClearParking: () -> Unit
@@ -917,26 +911,15 @@ fun ParkingLocationCard(
                     }
                 }
             } else {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(DarkSurface, RoundedCornerShape(8.dp))
-                        .padding(10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(12.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Chưa có vị trí đỗ xe", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text("GPS sẽ tự động ghi nhớ khi ngắt kết nối xe.", color = TextMuted, fontSize = 11.sp)
-                    }
-                    Button(
-                        onClick = onSaveCurrentLocation,
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurple.copy(alpha = 0.2f), contentColor = NeonPurple),
-                        border = BorderStroke(1.dp, NeonPurple),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("Lưu thử", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
+                    Text("Chưa có vị trí đỗ xe", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text("GPS sẽ tự động ghi nhớ vị trí khi ngắt kết nối xe máy.", color = TextMuted, fontSize = 11.sp)
                 }
             }
         }

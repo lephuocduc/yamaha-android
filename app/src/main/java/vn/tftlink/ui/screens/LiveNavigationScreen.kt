@@ -78,21 +78,24 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.CameraPosition
+import android.content.Context
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.UrlTileProvider
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapType
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.MarkerState
-import com.google.maps.android.compose.Polyline
-import com.google.maps.android.compose.TileOverlay
-import com.google.maps.android.compose.rememberCameraPositionState
-import java.net.URL
-import kotlin.math.abs
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
+import org.osmdroid.views.MapView
+import org.osmdroid.views.CustomZoomButtonsController
+import org.osmdroid.views.overlay.Polyline as OsmPolyline
+import org.osmdroid.views.overlay.Marker as OsmMarker
+import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.views.overlay.MapEventsOverlay
 import kotlinx.coroutines.launch
 import vn.tftlink.data.model.bike.BikeConnectionState
 import vn.tftlink.data.model.location.SavedPlace
@@ -111,6 +114,42 @@ import vn.tftlink.ui.theme.TextMuted
 import vn.tftlink.ui.theme.TextPrimary
 import vn.tftlink.ui.theme.TextSecondary
 import vn.tftlink.ui.theme.YamahaCyan
+
+private val GoogleTrafficTileSource = object : OnlineTileSourceBase(
+    "GoogleTraffic",
+    1, 20, 256, ".png",
+    arrayOf(
+        "https://mt0.google.com/vt/lyrs=m,traffic&hl=vi",
+        "https://mt1.google.com/vt/lyrs=m,traffic&hl=vi",
+        "https://mt2.google.com/vt/lyrs=m,traffic&hl=vi",
+        "https://mt3.google.com/vt/lyrs=m,traffic&hl=vi"
+    )
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val zoom = MapTileIndex.getZoom(pMapTileIndex)
+        val x = MapTileIndex.getX(pMapTileIndex)
+        val y = MapTileIndex.getY(pMapTileIndex)
+        return "$baseUrl&x=$x&y=$y&z=$zoom"
+    }
+}
+
+private val GoogleSatelliteTileSource = object : OnlineTileSourceBase(
+    "GoogleSatellite",
+    1, 20, 256, ".jpg",
+    arrayOf(
+        "https://mt0.google.com/vt/lyrs=y,traffic&hl=vi",
+        "https://mt1.google.com/vt/lyrs=y,traffic&hl=vi",
+        "https://mt2.google.com/vt/lyrs=y,traffic&hl=vi",
+        "https://mt3.google.com/vt/lyrs=y,traffic&hl=vi"
+    )
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val zoom = MapTileIndex.getZoom(pMapTileIndex)
+        val x = MapTileIndex.getX(pMapTileIndex)
+        val y = MapTileIndex.getY(pMapTileIndex)
+        return "$baseUrl&x=$x&y=$y&z=$zoom"
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("MissingPermission")
@@ -145,126 +184,159 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
     var droppedPinTitle by remember { mutableStateOf("Điểm đã ghim") }
     var droppedPinAddress by remember { mutableStateOf("") }
 
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val defaultPosition = LatLng(10.7769, 106.7009)
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(currentLoc ?: defaultPosition, 16f)
+    var osmdroidMapView by remember { mutableStateOf<MapView?>(null) }
+
+    // Initialize Osmdroid Configuration
+    LaunchedEffect(Unit) {
+        Configuration.getInstance().userAgentValue = "NConnect-Yamaha-Android/1.0"
+        try {
+            val prefs = context.getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE)
+            Configuration.getInstance().load(context, prefs)
+        } catch (_: Exception) {}
     }
 
-    // Auto follow user location
-    LaunchedEffect(currentLoc, heading, isNorthUp) {
+    // Auto follow user location & heading
+    LaunchedEffect(currentLoc, isNavigating) {
         val loc = currentLoc ?: return@LaunchedEffect
-        val bearing = if (isNorthUp) 0f else heading
-        cameraPositionState.animate(
-            CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder()
-                    .target(loc)
-                    .zoom(if (isNavigating) 17.5f else 16f)
-                    .bearing(bearing)
-                    .tilt(if (isNorthUp) 0f else 48f)
-                    .build()
-            ),
-            700
+        osmdroidMapView?.controller?.animateTo(
+            GeoPoint(loc.latitude, loc.longitude),
+            if (isNavigating) 17.5 else 16.0,
+            600L
         )
     }
 
+    LaunchedEffect(heading, isNorthUp) {
+        osmdroidMapView?.mapOrientation = if (isNorthUp) 0f else -heading
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
-        // 1. Google Maps Map View with High-Resolution Raster Tile Overlay
-        GoogleMap(
+        // 1. High-Performance Osmdroid Map View with Google Live Traffic (No API Key Required)
+        AndroidView(
             modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState,
-            properties = MapProperties(
-                isMyLocationEnabled = true,
-                isTrafficEnabled = false,
-                mapType = MapType.NONE // Using TileOverlay avoids empty beige canvas when Google Cloud vector API key is missing/revoked
-            ),
-            uiSettings = MapUiSettings(
-                compassEnabled = true,
-                myLocationButtonEnabled = false,
-                zoomControlsEnabled = false
-            ),
-            onMapClick = {
-                isSearchFocused = false
-            },
-            onMapLongClick = { latLng ->
-                isSearchFocused = false
-                droppedPin = latLng
-                viewModel.reverseGeocode(latLng) { title, address ->
-                    droppedPinTitle = title
-                    droppedPinAddress = address
+            factory = { ctx ->
+                MapView(ctx).apply {
+                    setMultiTouchControls(true)
+                    zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
+                    isTilesScaledToDpi = true
+                    setTileSource(GoogleTrafficTileSource)
+                    controller.setZoom(16.0)
+                    val start = currentLoc ?: defaultPosition
+                    controller.setCenter(GeoPoint(start.latitude, start.longitude))
+
+                    val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
+                        override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
+                            isSearchFocused = false
+                            return true
+                        }
+
+                        override fun longPressHelper(p: GeoPoint): Boolean {
+                            isSearchFocused = false
+                            val latLng = LatLng(p.latitude, p.longitude)
+                            droppedPin = latLng
+                            viewModel.reverseGeocode(latLng) { title, address ->
+                                droppedPinTitle = title
+                                droppedPinAddress = address
+                            }
+                            return true
+                        }
+                    })
+                    overlays.add(eventsOverlay)
+
+                    osmdroidMapView = this
                 }
-            }
-        ) {
-            // Live Tile Overlay (Google Traffic / Google Satellite / OpenStreetMap)
-            TileOverlay(
-                tileProvider = remember(mapStyle) {
-                    object : UrlTileProvider(256, 256) {
-                        override fun getTileUrl(x: Int, y: Int, zoom: Int): URL? {
-                            val server = abs((x + y) % 4)
-                            return try {
-                                when (mapStyle) {
-                                    "satellite" -> URL("https://mt$server.google.com/vt/lyrs=y,traffic&hl=vi&x=$x&y=$y&z=$zoom")
-                                    "osm" -> {
-                                        val subdomains = arrayOf("a", "b", "c")
-                                        val s = subdomains[abs((x + y) % subdomains.size)]
-                                        URL("https://$s.tile.openstreetmap.org/$zoom/$x/$y.png")
-                                    }
-                                    else -> URL("https://mt$server.google.com/vt/lyrs=m,traffic&hl=vi&x=$x&y=$y&z=$zoom")
-                                }
-                            } catch (_: Exception) {
-                                null
+            },
+            update = { mapView ->
+                // Update map style if toggled
+                val targetSource = when (mapStyle) {
+                    "satellite" -> GoogleSatelliteTileSource
+                    "osm" -> TileSourceFactory.MAPNIK
+                    else -> GoogleTrafficTileSource
+                }
+                if (mapView.tileProvider.tileSource.name() != targetSource.name()) {
+                    mapView.setTileSource(targetSource)
+                }
+
+                // Clear dynamic route and marker overlays (preserve eventsOverlay at index 0)
+                while (mapView.overlays.size > 1) {
+                    mapView.overlays.removeAt(mapView.overlays.size - 1)
+                }
+
+                // Draw Alternative Routes in Dark / Gray Polyline
+                alternativeRoutes.forEach { altRoute ->
+                    if (altRoute.coordinates.isNotEmpty()) {
+                        val poly = OsmPolyline().apply {
+                            outlinePaint.color = android.graphics.Color.parseColor("#64748B")
+                            outlinePaint.strokeWidth = 12f
+                            setPoints(altRoute.coordinates.map { GeoPoint(it.latitude, it.longitude) })
+                            setOnClickListener { _, _, _ ->
+                                viewModel.selectRoute(altRoute)
+                                true
                             }
                         }
+                        mapView.overlays.add(poly)
                     }
-                },
-                transparency = 0f,
-                zIndex = 0f
-            )
-            // Draw Alternative Routes in Dark / Gray Polyline
-            alternativeRoutes.forEach { altRoute ->
-                Polyline(
-                    points = altRoute.coordinates,
-                    color = Color(0xFF64748B),
-                    width = 12f,
-                    clickable = true,
-                    onClick = { viewModel.selectRoute(altRoute) }
-                )
-            }
-
-            // Draw Active Route Polyline in Yamaha Cyan / Neon Green
-            activeRoute?.let { route ->
-                if (route.coordinates.isNotEmpty()) {
-                    Polyline(
-                        points = route.coordinates,
-                        color = YamahaCyan,
-                        width = 16f
-                    )
-                    Marker(
-                        state = MarkerState(position = route.coordinates.last()),
-                        title = destinationTitle,
-                        snippet = instruction.nextRoadName
-                    )
                 }
-            }
 
-            // Dropped pin marker
-            droppedPin?.let { pin ->
-                Marker(
-                    state = MarkerState(position = pin),
-                    title = droppedPinTitle,
-                    snippet = droppedPinAddress
-                )
-            }
+                // Draw Active Route in Yamaha Cyan / Neon Green Polyline
+                activeRoute?.let { route ->
+                    if (route.coordinates.isNotEmpty()) {
+                        val poly = OsmPolyline().apply {
+                            outlinePaint.color = android.graphics.Color.parseColor("#00E5FF")
+                            outlinePaint.strokeWidth = 16f
+                            setPoints(route.coordinates.map { GeoPoint(it.latitude, it.longitude) })
+                        }
+                        mapView.overlays.add(poly)
 
-            // Parked Bike marker
-            parkedLoc?.let { parked ->
-                Marker(
-                    state = MarkerState(position = parked.coordinate),
-                    title = "Vị trí đỗ xe (${parked.bikeName})",
-                    snippet = parked.relativeTimeString
-                )
+                        val dest = route.coordinates.last()
+                        val marker = OsmMarker(mapView).apply {
+                            position = GeoPoint(dest.latitude, dest.longitude)
+                            title = destinationTitle
+                            snippet = instruction.nextRoadName
+                            setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
+                        }
+                        mapView.overlays.add(marker)
+                    }
+                }
+
+                // Dropped Pin Marker
+                droppedPin?.let { pin ->
+                    val marker = OsmMarker(mapView).apply {
+                        position = GeoPoint(pin.latitude, pin.longitude)
+                        title = droppedPinTitle
+                        snippet = droppedPinAddress
+                        setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
+                    }
+                    mapView.overlays.add(marker)
+                }
+
+                // Parked Bike Marker
+                parkedLoc?.let { parked ->
+                    val marker = OsmMarker(mapView).apply {
+                        position = GeoPoint(parked.coordinate.latitude, parked.coordinate.longitude)
+                        title = "Vị trí đỗ xe (${parked.bikeName})"
+                        snippet = parked.relativeTimeString
+                        setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
+                    }
+                    mapView.overlays.add(marker)
+                }
+
+                // Current User Location Marker with Direction
+                currentLoc?.let { loc ->
+                    val userMarker = OsmMarker(mapView).apply {
+                        position = GeoPoint(loc.latitude, loc.longitude)
+                        title = "Vị trí của bạn"
+                        setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_CENTER)
+                        rotation = if (isNorthUp) 0f else heading
+                    }
+                    mapView.overlays.add(userMarker)
+                }
+
+                mapView.invalidate()
             }
-        }
+        )
 
         // 2. Top Bar: Turn-by-Turn Guidance HUD OR Search Card
         Column(
@@ -448,6 +520,14 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                     fontWeight = FontWeight.Medium
                                 ),
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(
+                                    onSearch = {
+                                        if (searchQuery.isNotBlank()) {
+                                            viewModel.searchPlaces(searchQuery)
+                                        }
+                                    }
+                                ),
                                 decorationBox = { innerTextField ->
                                     if (searchQuery.isEmpty()) {
                                         Text(
@@ -480,60 +560,48 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
 
                         // Quick Action Chips & Search Results shown directly in-place
                         if (isSearchFocused || searchQuery.isNotBlank() || searchResults.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(10.dp))
+                            if (homePlace != null || workPlace != null) {
+                                Spacer(modifier = Modifier.height(10.dp))
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                homePlace?.let { home ->
-                                    Button(
-                                        onClick = {
-                                            viewModel.calculateRoute(home.coordinate, home.name, autoStart = true)
-                                            isSearchFocused = false
-                                            searchQuery = ""
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f),
-                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
-                                    ) {
-                                        Icon(Icons.Default.Home, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(15.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Về nhà", fontSize = 11.sp, color = TextPrimary)
-                                    }
-                                }
-
-                                workPlace?.let { work ->
-                                    Button(
-                                        onClick = {
-                                            viewModel.calculateRoute(work.coordinate, work.name, autoStart = true)
-                                            isSearchFocused = false
-                                            searchQuery = ""
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f),
-                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
-                                    ) {
-                                        Icon(Icons.Default.Work, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(15.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Đi làm", fontSize = 11.sp, color = TextPrimary)
-                                    }
-                                }
-
-                                Button(
-                                    onClick = {
-                                        viewModel.fetchNearbyGasStations()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(Icons.Default.LocalGasStation, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(15.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Cây xăng", fontSize = 11.sp, color = TextPrimary)
+                                    homePlace?.let { home ->
+                                        Button(
+                                            onClick = {
+                                                viewModel.calculateRoute(home.coordinate, home.name, autoStart = true)
+                                                isSearchFocused = false
+                                                searchQuery = ""
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.weight(1f),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                                        ) {
+                                            Icon(Icons.Default.Home, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(15.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Về nhà", fontSize = 11.sp, color = TextPrimary)
+                                        }
+                                    }
+
+                                    workPlace?.let { work ->
+                                        Button(
+                                            onClick = {
+                                                viewModel.calculateRoute(work.coordinate, work.name, autoStart = true)
+                                                isSearchFocused = false
+                                                searchQuery = ""
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceHighlight),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.weight(1f),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                                        ) {
+                                            Icon(Icons.Default.Work, contentDescription = null, tint = NeonOrange, modifier = Modifier.size(15.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Đi làm", fontSize = 11.sp, color = TextPrimary)
+                                        }
+                                    }
                                 }
                             }
 
@@ -580,6 +648,19 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                             }
                                         }
                                     }
+                                }
+                            } else if (searchQuery.isNotBlank() && !isSearching) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 14.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Không tìm thấy địa điểm",
+                                        color = TextSecondary,
+                                        fontSize = 12.sp
+                                    )
                                 }
                             }
                         }
@@ -738,7 +819,12 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
             }
 
             FloatingActionButton(
-                onClick = { viewModel.toggleNorthUp() },
+                onClick = {
+                    viewModel.toggleNorthUp()
+                    osmdroidMapView?.let { mv ->
+                        mv.mapOrientation = if (!isNorthUp) 0f else -heading
+                    }
+                },
                 containerColor = DarkSurfaceCard,
                 contentColor = if (isNorthUp) NeonOrange else YamahaCyan,
                 shape = CircleShape,
@@ -749,10 +835,12 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
 
             FloatingActionButton(
                 onClick = {
-                    currentLoc?.let {
-                        coroutineScope.launch {
-                            cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(it, 16.5f))
-                        }
+                    currentLoc?.let { loc ->
+                        osmdroidMapView?.controller?.animateTo(
+                            GeoPoint(loc.latitude, loc.longitude),
+                            16.5,
+                            600L
+                        )
                     }
                 },
                 containerColor = DarkSurfaceCard,

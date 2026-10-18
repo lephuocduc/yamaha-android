@@ -17,8 +17,8 @@ android {
         applicationId = "vn.tftlink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 60
-        versionName = "0.5.30"
+        versionCode = 61
+        versionName = "0.5.31"
 
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
 
@@ -85,6 +85,9 @@ dependencies {
     implementation("com.google.maps.android:maps-compose:6.2.1")
     implementation("com.google.android.gms:play-services-maps:19.0.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // OpenStreetMap & Custom Tile Map Engine (No Google Cloud API Key required)
+    implementation("org.osmdroid:osmdroid-android:6.1.18")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")

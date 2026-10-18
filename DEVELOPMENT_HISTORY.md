@@ -549,8 +549,24 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - Tích hợp thêm nút bấm chọn lớp bản đồ (`Icons.Default.Layers`) ở cạnh phải cho phép người dùng chuyển đổi mượt mà giữa: **Google Traffic** (Giao thông), **Google Satellite** (Vệ tinh có giao thông) và **OpenStreetMap**.
      - Giữ nguyên toàn bộ cơ chế Polyline dẫn đường Valhalla, marker xe, ghim điểm đến và điều khiển cử chỉ la bàn / vị trí.
 
+---
 
-
-
-
-
+### 📌 Quy tắc 9: Chuyển hoàn toàn tab Bản đồ sang Osmdroid (Không cần Google Cloud API Key), Tinh chỉnh Tìm kiếm & Dọn dẹp UX Đỗ xe / Cây xăng (v0.5.31 Build 61)
+- **Các vấn đề thực tế đã phát hiện & giải quyết triệt để**:
+  1. **Bản đồ lớn vẫn bị màu be trống trơn trên GoogleMap Compose**:
+     - *Nguyên nhân*: Cơ chế `com.google.maps.android.compose.GoogleMap` khi gặp API Key bị Google Play Console / Secret Scanner thu hồi sẽ ngắt toàn bộ pipeline hiển thị của SDK, khiến cả lớp `TileOverlay` cũng không thể nạp ngói.
+     - *Giải pháp*: Thay thế hoàn toàn `GoogleMap` trong `LiveNavigationScreen.kt` bằng `org.osmdroid.views.MapView` (Osmdroid 6.1.18) tích hợp qua `AndroidView`.
+     - *Cơ chế nạp ngói Google Live Traffic*: Khởi tạo `GoogleTrafficTileSource` kế thừa `OnlineTileSourceBase`, kết nối trực tiếp đến cụm máy chủ ngói Google (`https://mt{0-3}.google.com/vt/lyrs=m,traffic&hl=vi&x={x}&y={y}&z={z}`).
+     - *Ưu điểm vượt trội*: Không cần bất kỳ Google Cloud API Key nào, không cần đăng ký tài khoản GCP, tải ngói siêu tốc với bộ đệm offline thông minh, hiển thị đầy đủ chi tiết đường xá Việt Nam và mật độ giao thông xanh/vàng/đỏ thời gian thực.
+     - *Đầy đủ tính năng tương tác*: Hỗ trợ cử chỉ cảm ứng mượt mà, đổi 3 lớp bản đồ (Google Traffic, Google Satellite, OpenStreetMap), la bàn xoay bản đồ / North-Up, nút định vị vị trí hiện tại, nhấn giữ (long press qua `MapEventsOverlay`) để thả ghim tìm đường, vẽ polyline tuyến đường và điểm đến.
+  2. **Dọn dẹp nút "Lưu thử" trong Thẻ Đỗ xe (Find My Bike)**:
+     - Gỡ bỏ hoàn toàn nút *"Lưu thử"* khỏi `ParkingLocationCard` trong `MainDashboardScreen.kt`. Hệ thống chỉ lưu vị trí đỗ xe tự động khi xe máy ngắt kết nối BLE/MFi thật sự khi tắt khóa xe, giữ giao diện sạch sẽ, chuyên nghiệp.
+  3. **Sửa triệt để tìm kiếm địa điểm không ra gì hết**:
+     - *Lỗi khoảng trắng*: Thay thế `URLEncoder.encode(...)` dạng `+` thành `%20` vì các máy chủ Photon Komoot và OpenStreetMap Nominatim phân tách từ khóa theo `%20`.
+     - *Tọa độ ưu tiên*: Bổ sung toạ độ bias mặc định tại Việt Nam (TP.HCM / Hà Nội: `10.7769, 106.7009`) ngay cả khi GPS chưa fix được tọa độ ban đầu, giúp kết quả tìm kiếm luôn định hướng chính xác tại Việt Nam.
+     - *Trải nghiệm gõ phím*: Bổ sung `KeyboardOptions(imeAction = ImeAction.Search)` và `KeyboardActions(onSearch = ...)` trên `BasicTextField` để khi người dùng nhấn nút Search (kính lúp) trên bàn phím ảo, app sẽ lập tức truy vấn địa chỉ.
+     - *Phản hồi trực quan*: Bổ sung trạng thái *"Không tìm thấy địa điểm"* khi từ khóa không có kết quả, tránh cảm giác ứng dụng bị đơ.
+  4. **Bỏ nút Cây xăng khi nhấn vào ô tìm kiếm**:
+     - Loại bỏ nút *"Cây xăng"* khỏi danh sách phím tắt nhanh bên dưới ô tìm kiếm của `LiveNavigationScreen.kt`. Hàng phím tắt chỉ hiển thị "Về nhà", "Đi làm" nếu người dùng đã lưu các địa điểm này.
+  5. **Sửa nhãn hiển thị mức thu phóng Lv.14 và Lv.15 ở góc trái dưới tab Trang chủ**:
+     - Trong `MainViewModel.kt`, bổ sung ánh xạ cụ thể cho các mức zoom 15 (`"1.6km (Khu vực)"`) và 14 (`"3.0km (Thành phố)"`), dứt điểm hoàn toàn việc bị rơi vào nhánh mặc định `else -> "Lv.$zoom"`.
