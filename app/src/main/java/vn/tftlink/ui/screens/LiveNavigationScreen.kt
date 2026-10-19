@@ -126,8 +126,6 @@ import vn.tftlink.ui.theme.TextSecondary
 import vn.tftlink.ui.theme.YamahaCyan
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.style.TextOverflow
-import android.widget.Toast
 import androidx.compose.material.icons.filled.BookmarkAdd
 import vn.tftlink.R
 
