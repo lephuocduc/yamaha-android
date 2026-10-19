@@ -961,3 +961,36 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
   3. **Bổ sung cấu hình xe máy Valhalla**:
      - Thêm `alley_factor: 5.0` (phạt nặng việc rẽ vào ngõ nhỏ) và `top_speed: 65` (tốc độ tối đa xe máy) khớp 100% với cấu hình của app iOS.
 
+
+
+### 📌 Quy tắc 23: Sửa góc quay Mũi tên xe theo Chế độ bản đồ, Nút xóa từng chuyến & Lọc < 50m, Ẩn xem trước khi chạm ngoài, Cố định vị trí Tuyến 1/2 và Đặt tên địa điểm Yêu thích (v0.5.45 - Build 75)
+- **Vấn đề đã gặp**:
+  1. **Mũi tên hướng xe (puck) bị lệch hướng và ngược chiều giữa North-Up và Head-Tracking**:
+     - *Nguyên nhân*: Cơ chế vẽ của `osmdroid` Marker áp dụng góc xoay trên màn hình theo công thức `rotationOnScreen = -pj.orientation - mBearing` (với `mBearing = marker.rotation`). Khi gán `rotation = if (isNorthUp) heading else 0f`:
+       - Ở chế độ North-Up (`mapOrientation = 0`): `rotationOnScreen = -0 - heading = -heading` (xoay ngược chiều kim đồng hồ, dẫn đến xe chạy hướng Đông 90° thì mũi tên lại chỉ hướng Tây 270°).
+       - Ở chế độ Head-Tracking (`mapOrientation = -heading`): `rotationOnScreen = -(-heading) - 0 = +heading` (thay vì luôn hướng thẳng lên phía trước 0° so với màn hình điện thoại).
+  2. **Yêu cầu xóa từng lộ trình và loại bỏ lộ trình quá ngắn (< 50m)**:
+     - Thẻ lộ trình cần nút xóa nhỏ gọn kèm hộp thoại xác nhận trước khi xóa từng chuyến đi cụ thể, tránh xóa nhầm toàn bộ dữ liệu.
+     - Các chuyến đi ngắn dưới 50m (ví dụ dắt xe trong nhà hoặc nổ máy kiểm tra) không được lưu vào cơ sở dữ liệu lịch sử.
+  3. **Thẻ xem trước lộ trình (Bắt đầu dẫn đường) không biến mất khi bấm ra ngoài bản đồ**:
+     - Khi đang hiện thẻ xem trước lộ trình, người dùng chạm vào khoảng trống bất kỳ trên bản đồ thì thẻ không tự đóng lại mà người lái phải bấm nút 'X' nhỏ xíu.
+  4. **Các nút tùy chọn Tuyến 1 và Tuyến 2 bị hoán đổi vị trí khi bấm chọn**:
+     - Khi tính ra 2 tuyến đường gợi ý, ban đầu Nút 1 là Tuyến 1, Nút 2 là Tuyến 2. Khi người dùng bấm vào Tuyến 2, Tuyến 2 được chuyển thành `activeRoute`, làm giao diện vẽ lại Tuyến 2 vào vị trí Nút 1 và Tuyến 1 vào vị trí Nút 2 (bị đảo lộn vị trí các nút bấm).
+  5. **Thêm địa điểm yêu thích từ ghim bản đồ tự gán tên tọa độ cứng, không cho đặt tên**:
+     - Khi nhấn giữ ghim một vị trí trên bản đồ và bấm nút "Yêu thích", hệ thống tự động lưu với tên mặc định hoặc tọa độ mà không cho người dùng tự gõ đặt tên gợi nhớ (như "Nhà bạn Hưng", "Quán Cafe Cây Điệp"...).
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Đồng bộ chuẩn xác góc quay Mũi tên xe theo osmdroid (`LiveNavigationScreen.kt`)**:
+     - Công thức chuẩn hóa: `rotation = if (isNorthUp) -heading else -mapView.mapOrientation`.
+     - Ở chế độ North-Up: `rotationOnScreen = -0 - (-heading) = +heading` (mũi tên xoay theo chiều kim đồng hồ, trỏ chính xác theo hướng chuyển động của xe so với phương Bắc).
+     - Ở chế độ Head-Tracking: `rotationOnScreen = -mapView.mapOrientation - (-mapView.mapOrientation) = 0°` (mũi tên luôn hướng thẳng lên đỉnh màn hình điện thoại, đồng bộ mượt mà cùng hiệu ứng xoay bản đồ của `ValueAnimator`).
+  2. **Thêm nút xóa từng chuyến đi & Lọc cự ly < 50m (`TripHistoryScreen.kt`, `TripHistoryManager.kt`)**:
+     - Trong `TripHistoryManager.kt`: Thay thế điều kiện cũ bằng `if (distance < 50.0) { ... return }`. Toàn bộ các chuyến đi dưới 50m tự động bị loại bỏ hoàn toàn, không lưu vào Room Database.
+     - Trong `TripHistoryScreen.kt`: Thêm nút icon thùng rác nhỏ (`Icons.Default.Delete`) trên từng thẻ chuyến đi, hiển thị hộp thoại `AlertDialog` xác nhận xóa đúng chuyến đi đó với nút Xóa màu đỏ neon.
+  3. **Tự động đóng thẻ xem trước khi chạm vào khoảng trống bản đồ (`LiveNavigationScreen.kt`)**:
+     - Sử dụng `rememberUpdatedState` trong `singleTapConfirmedHelper` của `MapEventsOverlay`. Khi người dùng chạm vào bản đồ trống lúc chưa kích hoạt dẫn đường (`activeRoute != null && !isNavigating`), hệ thống tự động gọi `viewModel.stopNavigation()` để xóa lộ trình xem trước và ẩn thẻ ngay lập tức.
+  4. **Cố định vị trí các nút tùy chọn lộ trình (`LiveNavigationScreen.kt`)**:
+     - Sử dụng `allCalculatedRoutes` duyệt theo `forEachIndexed`.
+     - Nút vị trí 1 luôn luôn là "Tuyến 1", Nút vị trí 2 luôn luôn là "Tuyến 2", giữ nguyên vị trí cố định trên màn hình.
+     - Tuyến đang được chọn hiển thị nổi bật với viền sáng Yamaha Cyan và màu chữ Cyan đậm; tuyến còn lại hiển thị viền mờ và chữ xám. Khi bấm chọn Tuyến 2, trạng thái highlight chuyển sang Tuyến 2 tại chỗ mà hai nút không bao giờ bị đảo vị trí.
+  5. **Hộp thoại đặt tên gợi nhớ khi thêm Yêu thích từ bản đồ (`LiveNavigationScreen.kt`)**:
+     - Khi bấm nút "Yêu thích" trên thẻ thả ghim, hiển thị `AlertDialog` có sẵn `OutlinedTextField` điền sẵn tên địa chỉ gợi ý, cho phép người dùng tự do chỉnh sửa hoặc gõ tên gợi nhớ tùy ý trước khi bấm "Lưu".

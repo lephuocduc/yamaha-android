@@ -91,6 +91,7 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
     val sessionDuration by viewModel.sessionDurationSeconds.collectAsState()
 
     var selectedTripForDetail by remember { mutableStateOf<TripRecord?>(null) }
+    var tripToDelete by remember { mutableStateOf<TripRecord?>(null) }
 
     val totalDistanceMeters = trips.sumOf { it.distanceMeters }
     val totalSeconds = trips.sumOf { it.durationSeconds }
@@ -256,7 +257,8 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
                 items(trips, key = { it.id }) { trip ->
                     TripRecordCard(
                         trip = trip,
-                        onClick = { selectedTripForDetail = trip }
+                        onClick = { selectedTripForDetail = trip },
+                        onDelete = { tripToDelete = trip }
                     )
                 }
             }
@@ -275,12 +277,38 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
         )
     }
 
+    // Xác nhận xóa từng chuyến đi cụ thể
+    tripToDelete?.let { trip ->
+        AlertDialog(
+            onDismissRequest = { tripToDelete = null },
+            title = { Text("Xóa lộ trình này?", color = TextPrimary) },
+            text = { Text("Lộ trình ${trip.formattedDistance} ngày ${trip.formattedDate} sẽ bị xóa khỏi lịch sử.", color = TextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteTrip(trip.id)
+                        tripToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonRed)
+                ) {
+                    Text("Xóa", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { tripToDelete = null }) {
+                    Text("Hủy", color = TextSecondary)
+                }
+            },
+            containerColor = DarkSurface
+        )
+    }
 }
 
 @Composable
 fun TripRecordCard(
     trip: TripRecord,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -301,6 +329,18 @@ fun TripRecordCard(
                     Text(trip.formattedTimeRange, color = TextMuted, fontSize = 12.sp)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Xóa chuyến đi",
+                            tint = TextMuted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text("Chi tiết", color = YamahaCyan, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.width(2.dp))
                     Icon(

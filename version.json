@@ -1,6 +1,6 @@
 {
-  "versionCode": 74,
-  "versionName": "0.5.44",
-  "releaseNotes": "1) Khắc phục triệt để lỗi thời gian dự kiến đến (ETA) nhanh bất thường và không thay đổi khi chuyển đổi lộ trình: Chuyển từ tính khoảng cách đường chim bay sang tính tổng chiều dài các bước thực tế của lộ trình và thời gian dự kiến durationSeconds chuẩn từ Valhalla/OSRM; 2) Tự động tính toán lại ngay lập tức thời gian và giờ đến (ETA) khi người dùng chọn tuyến đường thay thế (Tuyến 2); 3) Bổ sung hệ số alley_factor (5.0) và top_speed (65 km/h) vào cấu hình xe máy Valhalla đồng bộ hoàn toàn với bản iOS.",
+  "versionCode": 75,
+  "versionName": "0.5.45",
+  "releaseNotes": "1) Đồng bộ hướng mũi tên xe (puck) giữa 2 chế độ North-Up và Head-Tracking: Sửa công thức góc quay osmdroid marker đảm bảo mũi tên luôn hướng trùng khớp hướng chuyển động thực tế của xe trên đường; 2) Bổ sung nút xóa nhỏ kèm xác nhận cho từng chuyến đi trong tab Lộ trình; tự động bỏ qua không lưu lộ trình ngắn dưới 50m; 3) Chạm vào khoảng trống bản đồ để tự động ẩn thẻ xem trước lộ trình (Bắt đầu dẫn đường); 4) Cố định vị trí các nút tùy chọn tuyến đường (Tuyến 1 bên trái, Tuyến 2 bên phải), không còn bị hoán đổi vị trí khi chạm chọn; 5) Cho phép người dùng đặt tên tùy chỉnh khi lưu địa điểm yêu thích từ ghim bản đồ.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

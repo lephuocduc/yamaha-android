@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.TurnSlightLeft
 import androidx.compose.material.icons.filled.TurnSlightRight
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Work
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -61,7 +62,10 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -69,7 +73,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.style.TextOverflow
+import android.widget.Toast
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -170,6 +177,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
     val isNavigating by viewModel.isNavigating.collectAsState()
     val activeRoute by viewModel.activeRoute.collectAsState()
     val alternativeRoutes by viewModel.alternativeRoutes.collectAsState()
+    val allCalculatedRoutes by viewModel.allCalculatedRoutes.collectAsState()
     val instruction by viewModel.currentInstruction.collectAsState()
     val isNorthUp by viewModel.isNorthUp.collectAsState()
     val lastFrameBitmap by viewModel.lastFrameBitmap.collectAsState()
@@ -194,10 +202,35 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
     var droppedPinAddress by remember { mutableStateOf("") }
     var isFollowingLocation by remember { mutableStateOf(true) }
 
+    var showAddFavoriteDialog by remember { mutableStateOf(false) }
+    var favoriteNameToSave by remember { mutableStateOf("") }
+    var favoritePinToSave by remember { mutableStateOf<LatLng?>(null) }
+    var favoriteAddressToSave by remember { mutableStateOf("") }
+
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val defaultPosition = LatLng(10.7769, 106.7009)
     var osmdroidMapView by remember { mutableStateOf<MapView?>(null) }
+
+    val currentOnMapTapped by rememberUpdatedState {
+        isSearchFocused = false
+        droppedPin = null
+        if (activeRoute != null && !isNavigating) {
+            viewModel.stopNavigation()
+        }
+    }
+
+    val currentOnMapLongPressed by rememberUpdatedState { p: GeoPoint ->
+        isSearchFocused = false
+        val latLng = LatLng(p.latitude, p.longitude)
+        droppedPin = latLng
+        droppedPinTitle = "Đang lấy địa chỉ..."
+        droppedPinAddress = String.format(java.util.Locale.US, "%.5f, %.5f", p.latitude, p.longitude)
+        viewModel.reverseGeocode(latLng) { title, address ->
+            droppedPinTitle = title
+            droppedPinAddress = address
+        }
+    }
 
     // Initialize Osmdroid Configuration
     LaunchedEffect(Unit) {
@@ -310,21 +343,12 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
 
                     val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
-                            isSearchFocused = false
-                            droppedPin = null
+                            currentOnMapTapped()
                             return true
                         }
 
                         override fun longPressHelper(p: GeoPoint): Boolean {
-                            isSearchFocused = false
-                            val latLng = LatLng(p.latitude, p.longitude)
-                            droppedPin = latLng
-                            droppedPinTitle = "Đang lấy địa chỉ..."
-                            droppedPinAddress = String.format(java.util.Locale.US, "%.5f, %.5f", p.latitude, p.longitude)
-                            viewModel.reverseGeocode(latLng) { title, address ->
-                                droppedPinTitle = title
-                                droppedPinAddress = address
-                            }
+                            currentOnMapLongPressed(p)
                             return true
                         }
                     })
@@ -418,9 +442,9 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                         title = "Vị trí của bạn"
                         icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_marker_user_puck)
                         setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_CENTER)
-                        // Khi North-Up: bản đồ cố định hướng Bắc -> mũi tên puck xoay theo heading của xe.
-                        // Khi Head-Tracking: bản đồ xoay theo -heading -> mũi tên puck luôn hướng thẳng lên phía trước (0°).
-                        rotation = if (isNorthUp) heading else 0f
+                        // Khi North-Up: bản đồ cố định hướng Bắc -> mũi tên puck xoay theo heading của xe (rotation = -heading do osmdroid vẽ góc rotationOnScreen = -mapOrientation - rotation).
+                        // Khi Head-Tracking: bản đồ xoay theo -heading -> mũi tên puck luôn hướng thẳng lên phía trước (rotation = -mapView.mapOrientation để rotationOnScreen = 0°).
+                        rotation = if (isNorthUp) -heading else -mapView.mapOrientation
                     }
                     mapView.overlays.add(userMarker)
                 }
@@ -824,15 +848,15 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     ) {
                         OutlinedButton(
                             onClick = {
-                                val favName = if (droppedPinTitle != "Điểm đã ghim" && droppedPinTitle != "Đang lấy địa chỉ...") droppedPinTitle else "Điểm ghim (${String.format(java.util.Locale.US, "%.3f, %.3f", pin.latitude, pin.longitude)})"
-                                val favPlace = SavedPlace(
-                                    name = favName,
-                                    address = droppedPinAddress,
-                                    latitude = pin.latitude,
-                                    longitude = pin.longitude
-                                )
-                                viewModel.addFavoritePlace(favPlace)
-                                Toast.makeText(context, "Đã thêm vào mục Yêu thích", Toast.LENGTH_SHORT).show()
+                                val defaultName = if (droppedPinTitle != "Điểm đã ghim" && droppedPinTitle != "Đang lấy địa chỉ...") {
+                                    droppedPinTitle
+                                } else {
+                                    "Điểm ghim (${String.format(java.util.Locale.US, "%.3f, %.3f", pin.latitude, pin.longitude)})"
+                                }
+                                favoriteNameToSave = defaultName
+                                favoritePinToSave = pin
+                                favoriteAddressToSave = droppedPinAddress
+                                showAddFavoriteDialog = true
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -967,29 +991,42 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                         }
                     }
 
-                    // Alternatives row
-                    if (alternativeRoutes.isNotEmpty()) {
+                    // Alternatives row - Giữ cố định vị trí Tuyến 1, Tuyến 2 (không bị đảo chỗ khi chạm chọn)
+                    if (allCalculatedRoutes.size > 1) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Button(
-                                onClick = { viewModel.selectRoute(route) },
-                                colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan.copy(alpha = 0.25f)),
-                                border = BorderStroke(1.dp, YamahaCyan),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Tuyến 1: ${route.formattedDuration}", color = TextPrimary, fontSize = 12.sp)
-                            }
-                            alternativeRoutes.firstOrNull()?.let { alt ->
-                                OutlinedButton(
-                                    onClick = { viewModel.selectRoute(alt) },
-                                    border = BorderStroke(1.dp, DarkSurfaceBorder),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("Tuyến 2: ${alt.timeDiffString}", color = TextSecondary, fontSize = 12.sp)
+                            allCalculatedRoutes.forEachIndexed { index, r ->
+                                val isSelected = (r.id == route.id)
+                                if (isSelected) {
+                                    Button(
+                                        onClick = { viewModel.selectRoute(r) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan.copy(alpha = 0.25f)),
+                                        border = BorderStroke(1.5.dp, YamahaCyan),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = "Tuyến ${index + 1}: ${r.formattedDuration}",
+                                            color = YamahaCyan,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { viewModel.selectRoute(r) },
+                                        border = BorderStroke(1.dp, DarkSurfaceBorder),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = "Tuyến ${index + 1}: ${r.timeDiffString.ifEmpty { r.formattedDuration }}",
+                                            color = TextSecondary,
+                                            fontSize = 12.sp
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1159,6 +1196,80 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
         }
 
 
+        // Hộp thoại đặt tên khi lưu địa điểm yêu thích từ bản đồ
+        if (showAddFavoriteDialog && favoritePinToSave != null) {
+            val pin = favoritePinToSave!!
+            AlertDialog(
+                onDismissRequest = { showAddFavoriteDialog = false },
+                containerColor = DarkSurfaceCard,
+                title = {
+                    Text(
+                        text = "Lưu địa điểm yêu thích",
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = favoriteAddressToSave.ifEmpty {
+                                String.format(java.util.Locale.US, "%.5f, %.5f", pin.latitude, pin.longitude)
+                            },
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        OutlinedTextField(
+                            value = favoriteNameToSave,
+                            onValueChange = { favoriteNameToSave = it },
+                            label = { Text("Tên gợi nhớ") },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = YamahaCyan,
+                                unfocusedBorderColor = DarkSurfaceBorder,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary,
+                                focusedLabelColor = YamahaCyan,
+                                unfocusedLabelColor = TextSecondary
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val finalName = favoriteNameToSave.trim().ifEmpty {
+                                if (droppedPinTitle != "Điểm đã ghim" && droppedPinTitle != "Đang lấy địa chỉ...") {
+                                    droppedPinTitle
+                                } else {
+                                    "Điểm ghim (${String.format(java.util.Locale.US, "%.3f, %.3f", pin.latitude, pin.longitude)})"
+                                }
+                            }
+                            val favPlace = SavedPlace(
+                                name = finalName,
+                                address = favoriteAddressToSave,
+                                latitude = pin.latitude,
+                                longitude = pin.longitude
+                            )
+                            viewModel.addFavoritePlace(favPlace)
+                            showAddFavoriteDialog = false
+                            Toast.makeText(context, "Đã lưu \"$finalName\" vào Yêu thích", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan)
+                    ) {
+                        Text("Lưu", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAddFavoriteDialog = false }) {
+                        Text("Hủy", color = TextSecondary)
+                    }
+                }
+            )
+        }
     }
 }
 

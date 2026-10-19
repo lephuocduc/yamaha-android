@@ -134,8 +134,8 @@ class TripHistoryManager private constructor(
         val maxSpeed = _sessionMaxSpeedKmh.value
         val avgSpeed = if (durationSec > 0) (distance / durationSec) * 3.6 else 0.0
 
-        // Chỉ lưu chuyến đi nếu di chuyển > 30 mét hoặc > 20 giây
-        if (distance < 30.0 && durationSec < 20) {
+        // Không lưu lộ trình nếu quãng đường di chuyển dưới 50 mét
+        if (distance < 50.0) {
             synchronized(sessionPoints) { sessionPoints.clear() }
             return
         }
