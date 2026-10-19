@@ -924,3 +924,26 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
   5. **Đồng bộ chuẩn xác logic Đỗ xe (`BikeForegroundService.kt`, `MainViewModel.kt`, `ParkingLocationManager.kt`)**:
      - Thêm biến cờ `wasConnectedToBike` chặn đứng việc kích hoạt ghi nhận đỗ xe giả khi mở ứng dụng ở trạng thái ngắt kết nối.
      - Đảm bảo quy tắc bảo toàn mốc thời gian đỗ xe cũ khi khoảng cách di chuyển `< 50m`.
+
+### 📌 Quy tắc 21: Bảo vệ ghép đôi Bluetooth (Tránh lỗi "Pairing Failed"), Đồng bộ North-Up/Heading Tracking chuẩn iOS & Bảo toàn Lịch sử lộ trình (v0.5.43 - Build 73)
+- **Vấn đề đã gặp**:
+  1. **Lỗi Bluetooth "Waiting for approval from ... -> Pairing Failed"**: Khi người dùng vào Cài đặt Bluetooth của điện thoại để ghép đôi với xe máy, trên đồng hồ xe báo "Waiting for approval from Sony G8142" rồi ngay sau đó báo "Pairing Failed". Nguyên nhân: `BikeForegroundService` chạy ngầm quét BLE liên tục. Khi thấy CCU xe quảng bá trong lúc đang ghép đôi, `YamahaCCUManager.handleScanResult` tự động gọi ngay `connect(bike)`. Hàm này gọi `connectGatt` VÀ mở ngay kênh SPP RFCOMM (`device.createRfcommSocketToServiceRecord(SPP_UUID).connect()`). Kết nối RFCOMM và GATT tới thiết bị chưa ghép đôi (unbonded) trong lúc hệ điều hành đang thực hiện bắt tay mã hóa khiến CCU của xe từ chối và hủy tiến trình ghép đôi.
+  2. **Chức năng North-Up & Heading Tracking chưa đồng bộ với iOS**: Trong `MainViewModel`, `toggleNorthUp()` chỉ đổi biến UI `_isNorthUp` mà không cập nhật `streamRenderer.isNorthUp`, khiến màn hình TFT xe máy bị lệch chế độ với điện thoại. Ngoài ra, khi xe dừng đèn đỏ (`speed < 3 km/h`), thiếu cảm biến la bàn điện tử định hướng như iOS; nút chuyển đổi FAB trên điện thoại chưa mang thiết kế nhận diện 2 chế độ (THEO XE viền Cyan vs BẮC viền Đỏ) của app iOS cũ.
+  3. **Lộ trình lịch sử bị cho phép xóa**: Người dùng yêu cầu không cho phép xóa lộ trình lịch sử để bảo toàn dữ liệu di chuyển vĩnh viễn, nhưng giao diện vẫn có các nút "Xóa tất cả", nút xóa trên từng thẻ và nút "Xóa chuyến này" trong hộp thoại chi tiết.
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Bảo vệ toàn diện tiến trình ghép đôi Bluetooth (`YamahaCCUManager.kt`)**:
+     - *Chặn kết nối tự động với thiết bị chưa ghép đôi*: Trong `handleScanResult`, kiểm tra `device.bondState == BluetoothDevice.BOND_BONDED`. Nếu thiết bị chưa ghép đôi (`BOND_NONE`) hoặc đang trong tiến trình ghép đôi (`BOND_BONDING`), TUYỆT ĐỐI không gọi `connect(bike)`.
+     - *Lắng nghe `ACTION_BOND_STATE_CHANGED`*: Đăng ký `BroadcastReceiver` hệ thống. Khi nhận trạng thái `BOND_BONDING`, lập tức dừng quét BLE (`stopScanning()`) để giải phóng 100% băng thông sóng vô tuyến cho hệ điều hành Android hoàn tất ghép đôi và trao đổi mã PIN. Khi nhận `BOND_BONDED`, cập nhật danh sách và tự động kết nối sau 1.5 giây để sóng ổn định.
+     - *Hoãn kết nối kênh SPP RFCOMM*: Loại bỏ lệnh gọi `connectSppChannel` đồng thời trong `connect()`. Chỉ mở kênh SPP RFCOMM sau khi BLE GATT đã bắt tay và xác thực thành công (`onBikeConnectedSuccessfully`), tránh xung đột phân tầng HCI trên Android 9.
+  2. **Đồng bộ chuẩn xác North-Up & Heading Tracking theo app iOS (`MainViewModel.kt`, `NavigationEngine.kt`, `LiveNavigationScreen.kt`)**:
+     - *Đồng bộ TFT Stream Renderer*: `MainViewModel.toggleNorthUp()` luôn cập nhật `streamRenderer.isNorthUp = _isNorthUp.value`.
+     - *Cảm biến la bàn khi đứng yên*: Tích hợp `SensorEventListener` (Rotation Vector / Orientation) trong `NavigationEngine`. Khi xe lăn bánh (`speed >= 3.0 km/h`), ưu tiên hướng GPS course/bearing; khi xe dừng (`speed < 3.0 km/h`), sử dụng la bàn cảm biến với bộ lọc suy hao dao động (jitter damping) 2.0° để xoay bản đồ tự nhiên mà không rung lắc.
+     - *Thiết kế nút FAB chuẩn iOS*: Nút FAB kích thước 46x46dp, bo góc 12dp:
+       - Chế độ Heading Tracking: Viền Cyan, Icon Navigation Cyan, chữ "THEO XE" (8sp ExtraBold Cyan).
+       - Chế độ North-Up: Viền Đỏ, Icon Explore Đỏ, chữ "BẮC" (8sp ExtraBold Trắng).
+  3. **Bảo vệ vĩnh viễn Lịch sử lộ trình (`TripHistoryScreen.kt`)**:
+     - Loại bỏ nút thùng rác "Xóa tất cả" trên thanh tiêu đề.
+     - Loại bỏ nút xóa trên từng thẻ lộ trình, thay bằng nhãn "Chi tiết" cùng mũi tên chuyển tiếp Cyan.
+     - Loại bỏ nút "Xóa chuyến này" trong hộp thoại xem chi tiết, thay bằng nút "Đóng" toàn chiều rộng tinh tế.
+     - Xóa bỏ hoàn toàn các hộp thoại xác nhận xóa lộ trình khỏi giao diện.
+

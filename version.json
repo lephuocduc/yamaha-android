@@ -1,6 +1,6 @@
 {
-  "versionCode": 72,
-  "versionName": "0.5.42",
-  "releaseNotes": "1) Tích hợp Google BoringSSL (Conscrypt) kích hoạt chuẩn TLS 1.3 RFC 8446 đầy đủ cho Android 9 (API 28), khắc phục triệt để lỗi SSLHandshakeException khi kết nối máy chủ Valhalla Motorcycle Routing; 2) Ưu tiên Android Geocoder khi nhấn giữ bản đồ và kết thúc lộ trình để hiển thị số nhà chi tiết, tên đường, phường xã thay vì chỉ hiện tên đường hoặc toạ độ; 3) Khắc phục lỗi bất đồng bộ trong Lịch sử lộ trình: đảm bảo điểm kết thúc luôn hiển thị địa chỉ chi tiết; 4) Chuyển đổi siêu mượt mà giữa chế độ Cố định hướng Bắc (North-Up) và Theo hướng lái (Head-Tracking) bằng ValueAnimator và bộ lọc khử rung giật la bàn; 5) Đồng bộ chuẩn xác logic xác định đỗ xe theo app iOS cũ: chỉ lưu mốc đỗ xe khi xe thực sự kết nối rồi ngắt kết nối và giữ nguyên mốc thời gian cũ nếu xe chỉ bật khóa rồi tắt mà không di chuyển (<50m).",
+  "versionCode": 73,
+  "versionName": "0.5.43",
+  "releaseNotes": "1) Khắc phục triệt để lỗi không ghép đôi được Bluetooth với xe từ Cài đặt máy (báo 'waiting for approval from ...' rồi 'pairing failed'): Chặn auto-connect với thiết bị đang bonding hoặc chưa ghép đôi (BOND_NONE), tạm dừng scan BLE khi hệ điều hành đang ghép đôi và hoãn kết nối SPP RFCOMM tới khi BLE GATT đã xác thực thành công; 2) Đồng bộ hoàn chỉnh chức năng North-Up & Heading Tracking chuẩn theo iOS: tích hợp cảm biến la bàn điện tử khi xe đứng yên (< 3 km/h), ưu tiên GPS course khi lăn bánh (>= 3 km/h), đồng bộ streamRenderer.isNorthUp với màn hình xe TFT, thiết kế nút FAB chuyển đổi 2 chế độ BẮC (Đỏ) và THEO XE (Cyan) chuẩn app iOS; 3) Bảo vệ vĩnh viễn lộ trình di chuyển: loại bỏ tất cả các nút xóa và hộp thoại xác nhận xóa để bảo toàn dữ liệu lịch sử chuyến đi.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

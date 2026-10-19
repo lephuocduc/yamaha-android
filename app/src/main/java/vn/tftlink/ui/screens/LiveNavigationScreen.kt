@@ -1058,19 +1058,56 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                             start()
                         }
                     }
-                    val msg = if (targetIsNorthUp) "Chế độ bản đồ: Cố định hướng Bắc (North-Up - chữ xuôi)" else "Chế độ bản đồ: Xoay theo đầu xe (chữ bản đồ sẽ xoay theo góc lái)"
+                    val msg = if (targetIsNorthUp) "Cố định phương Bắc (North-Up)" else "Theo hướng xe chạy (Heading Tracking)"
                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 },
-                containerColor = DarkSurfaceCard,
-                contentColor = if (isNorthUp) TextPrimary else NeonGreen,
-                shape = CircleShape,
-                modifier = Modifier.size(46.dp)
+                containerColor = Color(0xEB141E2E),
+                contentColor = if (isNorthUp) Color(0xFFEF4444) else YamahaCyan,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .size(46.dp)
+                    .border(
+                        BorderStroke(
+                            1.5.dp,
+                            if (isNorthUp) Color(0xFFEF4444).copy(alpha = 0.85f) else YamahaCyan.copy(alpha = 0.85f)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    )
             ) {
-                Icon(
-                    imageVector = if (isNorthUp) Icons.Default.Explore else Icons.Default.Navigation,
-                    contentDescription = if (isNorthUp) "Cố định hướng Bắc" else "Theo hướng lái xe",
-                    modifier = Modifier.size(22.dp)
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    if (isNorthUp) {
+                        Icon(
+                            imageVector = Icons.Default.Explore,
+                            contentDescription = "Cố định phương Bắc",
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "BẮC",
+                            color = Color.White,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            lineHeight = 9.sp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Navigation,
+                            contentDescription = "Theo hướng xe chạy",
+                            tint = YamahaCyan,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "THEO XE",
+                            color = YamahaCyan,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            lineHeight = 9.sp
+                        )
+                    }
+                }
             }
 
             FloatingActionButton(

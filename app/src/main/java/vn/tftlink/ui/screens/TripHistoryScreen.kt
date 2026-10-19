@@ -90,8 +90,6 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
     val sessionDist by viewModel.sessionDistanceMeters.collectAsState()
     val sessionDuration by viewModel.sessionDurationSeconds.collectAsState()
 
-    var showClearAllDialog by remember { mutableStateOf(false) }
-    var tripToDelete by remember { mutableStateOf<TripRecord?>(null) }
     var selectedTripForDetail by remember { mutableStateOf<TripRecord?>(null) }
 
     val totalDistanceMeters = trips.sumOf { it.distanceMeters }
@@ -123,16 +121,6 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
                     color = TextSecondary,
                     fontSize = 12.sp
                 )
-            }
-
-            if (trips.isNotEmpty()) {
-                IconButton(onClick = { showClearAllDialog = true }) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Xóa tất cả",
-                        tint = NeonRed.copy(alpha = 0.8f)
-                    )
-                }
             }
         }
 
@@ -268,8 +256,7 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
                 items(trips, key = { it.id }) { trip ->
                     TripRecordCard(
                         trip = trip,
-                        onClick = { selectedTripForDetail = trip },
-                        onDelete = { tripToDelete = trip }
+                        onClick = { selectedTripForDetail = trip }
                     )
                 }
             }
@@ -284,72 +271,16 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
     selectedTripForDetail?.let { trip ->
         TripDetailDialog(
             trip = trip,
-            onDismiss = { selectedTripForDetail = null },
-            onDelete = {
-                tripToDelete = trip
-                selectedTripForDetail = null
-            }
+            onDismiss = { selectedTripForDetail = null }
         )
     }
 
-    // Confirm Clear All Dialog
-    if (showClearAllDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearAllDialog = false },
-            title = { Text("Xóa toàn bộ lịch sử?", color = TextPrimary) },
-            text = { Text("Tất cả lộ trình đã lưu sẽ bị xóa vĩnh viễn khỏi thiết bị.", color = TextSecondary) },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.clearAllTrips()
-                        showClearAllDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonRed)
-                ) {
-                    Text("Xóa tất cả", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearAllDialog = false }) {
-                    Text("Hủy", color = TextSecondary)
-                }
-            },
-            containerColor = DarkSurface
-        )
-    }
-
-    // Confirm Delete Single Trip Dialog
-    tripToDelete?.let { trip ->
-        AlertDialog(
-            onDismissRequest = { tripToDelete = null },
-            title = { Text("Xóa lộ trình này?", color = TextPrimary) },
-            text = { Text("Lộ trình ${trip.formattedDistance} ngày ${trip.formattedDate} sẽ bị xóa.", color = TextSecondary) },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.deleteTrip(trip.id)
-                        tripToDelete = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonRed)
-                ) {
-                    Text("Xóa", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { tripToDelete = null }) {
-                    Text("Hủy", color = TextSecondary)
-                }
-            },
-            containerColor = DarkSurface
-        )
-    }
 }
 
 @Composable
 fun TripRecordCard(
     trip: TripRecord,
-    onClick: () -> Unit,
-    onDelete: () -> Unit
+    onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -370,10 +301,8 @@ fun TripRecordCard(
                     Text(trip.formattedTimeRange, color = TextMuted, fontSize = 12.sp)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Delete, contentDescription = "Xóa", tint = TextMuted, modifier = Modifier.size(16.dp))
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Chi tiết", color = YamahaCyan, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Spacer(modifier = Modifier.width(2.dp))
                     Icon(
                         imageVector = Icons.Default.ChevronRight,
                         contentDescription = "Xem chi tiết",
@@ -419,8 +348,7 @@ fun TripRecordCard(
 @Composable
 fun TripDetailDialog(
     trip: TripRecord,
-    onDismiss: () -> Unit,
-    onDelete: () -> Unit
+    onDismiss: () -> Unit
 ) {
     val scrollState = rememberScrollState()
     val polyPoints = remember(trip) { trip.getParsedPolylinePoints() }
@@ -635,28 +563,15 @@ fun TripDetailDialog(
                 Spacer(modifier = Modifier.height(18.dp))
 
                 // Actions
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = onDelete,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonRed),
-                        border = BorderStroke(1.dp, NeonRed.copy(alpha = 0.6f)),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Xóa chuyến này", fontSize = 12.sp)
-                    }
-
-                    Button(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("Đóng", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
+                    Text("Đóng", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
             }
         }

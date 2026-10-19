@@ -14,7 +14,10 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.location.LocationManager
 import android.os.Build
 import android.os.ParcelUuid
@@ -197,6 +200,83 @@ class YamahaCCUManager(
     private var naviSeq: Int = 1
     private var wasConnectedToBike: Boolean = false
 
+    private val bondStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            val action = intent?.action ?: return
+            if (action == BluetoothDevice.ACTION_BOND_STATE_CHANGED) {
+                val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE) ?: return
+                val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)
+                val prevBondState = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.BOND_NONE)
+                val devName = device.name ?: device.address
+
+                val isBike = isYamahaBikeCCU(devName, emptyList()) ||
+                        _discoveredBikes.value.any { it.address.equals(device.address, ignoreCase = true) }
+
+                when (bondState) {
+                    BluetoothDevice.BOND_BONDING -> {
+                        if (isBike) {
+                            log("⏳ Đang ghép đôi Bluetooth với: $devName (BOND_BONDING). Tạm dừng quét BLE để hệ điều hành ghép đôi an toàn...")
+                            stopScanning()
+                        }
+                    }
+                    BluetoothDevice.BOND_BONDED -> {
+                        if (isBike) {
+                            log("✓ Đã ghép đôi Bluetooth thành công với xe: $devName (BOND_BONDED)!")
+                            val current = _discoveredBikes.value.toMutableList()
+                            val idx = current.indexOfFirst { it.address.equals(device.address, ignoreCase = true) }
+                            val updatedBike = if (idx != -1) {
+                                val b = current[idx].copy(isPaired = true)
+                                current[idx] = b
+                                b
+                            } else {
+                                val b = BikeDevice(
+                                    id = device.address,
+                                    name = if (devName.isNotBlank()) devName else "Yamaha CCU",
+                                    address = device.address,
+                                    rssi = -60,
+                                    isPaired = true
+                                )
+                                current.add(b)
+                                b
+                            }
+                            _discoveredBikes.value = current
+
+                            scope.launch {
+                                delay(1500)
+                                if (_connectedBike.value == null && (_state.value == BikeConnectionState.SCANNING || _state.value == BikeConnectionState.DISCONNECTED)) {
+                                    log("⚡ Tự động kết nối tới xe vừa ghép đôi thành công: ${updatedBike.name}")
+                                    connect(updatedBike)
+                                }
+                            }
+                        }
+                    }
+                    BluetoothDevice.BOND_NONE -> {
+                        if (isBike) {
+                            if (prevBondState == BluetoothDevice.BOND_BONDING) {
+                                log("⚠️ Ghép đôi Bluetooth thất bại hoặc bị hủy với: $devName")
+                            } else {
+                                log("ℹ️ Đã hủy ghép đôi thiết bị: $devName")
+                            }
+                            val current = _discoveredBikes.value.toMutableList()
+                            val idx = current.indexOfFirst { it.address.equals(device.address, ignoreCase = true) }
+                            if (idx != -1) {
+                                current[idx] = current[idx].copy(isPaired = false)
+                                _discoveredBikes.value = current
+                            }
+
+                            scope.launch {
+                                delay(2000)
+                                if (_connectedBike.value == null && _state.value == BikeConnectionState.DISCONNECTED) {
+                                    startScanning()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     init {
         streetCross.onHandlebarButtonReceived = { btn ->
             scope.launch(Dispatchers.Main) {
@@ -213,6 +293,13 @@ class YamahaCCUManager(
                     else -> Unit
                 }
             }
+        }
+
+        try {
+            val filter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            context.registerReceiver(bondStateReceiver, filter)
+        } catch (e: Exception) {
+            log("Lỗi đăng ký bondStateReceiver: ${e.message}")
         }
     }
 
@@ -264,23 +351,35 @@ class YamahaCCUManager(
         if (name.isEmpty()) return
 
         if (isYamahaBikeCCU(name, serviceUuids)) {
+            val isBonded = (device.bondState == BluetoothDevice.BOND_BONDED)
+            val isBonding = (device.bondState == BluetoothDevice.BOND_BONDING)
+
             val bike = BikeDevice(
                 id = device.address,
                 name = name,
                 address = device.address,
                 rssi = result.rssi,
-                isPaired = device.bondState == BluetoothDevice.BOND_BONDED
+                isPaired = isBonded
             )
 
             val current = _discoveredBikes.value.toMutableList()
-            val existingIdx = current.indexOfFirst { it.address == bike.address }
+            val existingIdx = current.indexOfFirst { it.address.equals(bike.address, ignoreCase = true) }
             if (existingIdx == -1) {
-                log("✓ Thấy xe Yamaha hợp lệ: $name (${device.address}), RSSI: ${result.rssi} dBm")
+                log("✓ Thấy xe Yamaha hợp lệ: $name (${device.address}), RSSI: ${result.rssi} dBm (Đã ghép đôi: $isBonded)")
                 current.add(bike)
                 _discoveredBikes.value = current
 
-                // Tự động kết nối nếu đang tìm kiếm
-                if (_connectedBike.value == null && (_state.value == BikeConnectionState.SCANNING || _state.value == BikeConnectionState.DISCONNECTED)) {
+                // BẢO VỆ QUÁ TRÌNH GHÉP ĐÔI (PAIRING):
+                // 1. Nếu đang trong tiến trình ghép đôi (BOND_BONDING), TUYỆT ĐỐI không gọi connect()!
+                // 2. Chỉ tự động kết nối nếu thiết bị ĐÃ ĐƯỢC GHÉP ĐÔI (BOND_BONDED) trong Cài đặt Bluetooth máy.
+                // Việc tự ý kết nối GATT/RFCOMM tới thiết bị chưa ghép đôi là nguyên nhân gây lỗi 'PAIRING FAILED' trên đồng hồ xe.
+                if (isBonding) {
+                    log("⏳ Xe $name đang ghép đôi (BOND_BONDING). Tạm ngưng kết nối từ app để tránh lỗi Pairing Failed...")
+                    return
+                }
+
+                if (isBonded && _connectedBike.value == null && (_state.value == BikeConnectionState.SCANNING || _state.value == BikeConnectionState.DISCONNECTED)) {
+                    log("⚡ Tự động kết nối tới xe đã ghép đôi: $name (${device.address})")
                     connect(bike)
                 }
             } else {
@@ -353,9 +452,6 @@ class YamahaCCUManager(
 
     fun connect(device: BikeDevice) {
         stopScanning()
-        _state.value = BikeConnectionState.CONNECTING
-        _connectedBike.value = device
-        log("Đang kết nối BLE GATT tới xe ${device.name} (${device.address})...")
 
         val bluetoothDevice = bluetoothAdapter?.getRemoteDevice(device.address)
         if (bluetoothDevice == null) {
@@ -366,6 +462,21 @@ class YamahaCCUManager(
             return
         }
 
+        // Kiểm tra trạng thái ghép đôi Bluetooth
+        if (bluetoothDevice.bondState == BluetoothDevice.BOND_BONDING) {
+            log("⏳ Xe ${device.name} đang trong quá trình ghép đôi. Vui lòng xác nhận trên màn hình xe và điện thoại...")
+            return
+        }
+        if (bluetoothDevice.bondState == BluetoothDevice.BOND_NONE) {
+            log("ℹ️ Xe ${device.name} chưa ghép đôi. Đang gửi yêu cầu ghép đôi Bluetooth (createBond)...")
+            bluetoothDevice.createBond()
+            return
+        }
+
+        _state.value = BikeConnectionState.CONNECTING
+        _connectedBike.value = device
+        log("Đang kết nối BLE GATT tới xe ${device.name} (${device.address})...")
+
         bluetoothGatt = bluetoothDevice.connectGatt(
             context,
             false,
@@ -373,8 +484,10 @@ class YamahaCCUManager(
             BluetoothDevice.TRANSPORT_LE
         )
 
-        // Đồng thời khởi chạy kết nối SPP RFCOMM cho kênh Stream màn hình xe
-        connectSppChannel(bluetoothDevice)
+        // LƯU Ý QUAN TRỌNG:
+        // Không gọi connectSppChannel(bluetoothDevice) đồng thời ở đây!
+        // Kênh SPP RFCOMM chỉ được mở SAU KHI kết nối BLE GATT và xác thực CCU thành công (onBikeConnectedSuccessfully)
+        // để tránh xung đột HCI layer trên Android 9 và tránh làm gián đoạn handshake CCU.
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
@@ -559,6 +672,10 @@ class YamahaCCUManager(
     // =========================================================================
 
     private fun connectSppChannel(device: BluetoothDevice) {
+        if (device.bondState != BluetoothDevice.BOND_BONDED) {
+            log("Chưa thể mở kênh SPP vì thiết bị chưa hoàn tất ghép đôi (bondState=${device.bondState})")
+            return
+        }
         sppJob?.cancel()
         sppJob = scope.launch(Dispatchers.IO) {
             try {
@@ -571,7 +688,6 @@ class YamahaCCUManager(
                 log("✓ Kênh SPP RFCOMM đã kết nối thành công!")
                 _state.value = BikeConnectionState.STREAMING
                 streetCross.displaySpec.isReadyForStreaming = true
-                onBikeConnectedSuccessfully()
 
                 // Khởi động luồng đọc NaviLite frames liên tục
                 runNaviLiteReader()
@@ -902,6 +1018,14 @@ class YamahaCCUManager(
     private fun onBikeConnectedSuccessfully() {
         wasConnectedToBike = true
         onBikeConnected?.invoke()
+
+        // Mở kênh SPP RFCOMM cho Garmin StreetCross sau khi BLE GATT đã xác thực thành công
+        _connectedBike.value?.address?.let { addr ->
+            val dev = bluetoothAdapter?.getRemoteDevice(addr)
+            if (dev != null && (sppSocket == null || sppSocket?.isConnected != true)) {
+                connectSppChannel(dev)
+            }
+        }
     }
 
     private fun handleDisconnection() {

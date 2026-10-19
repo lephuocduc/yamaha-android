@@ -99,7 +99,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isRerouting: StateFlow<Boolean> = navEngine.isRerouting
     val destinationTitle: StateFlow<String> = navEngine.destinationTitle
 
-    private val _isNorthUp = MutableStateFlow(true)
+    private val _isNorthUp = MutableStateFlow(false)
     val isNorthUp: StateFlow<Boolean> = _isNorthUp.asStateFlow()
 
     // Cluster Map Engine Mode (Google Maps Traffic vs OSM CartoDB)
@@ -137,6 +137,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Link cross-service references
         navEngine.ccuManager = ccuManager
         navEngine.streamRenderer = streamRenderer
+        streamRenderer.isNorthUp = _isNorthUp.value
 
         setupCCUCallbacks()
         startLocationUpdates()
@@ -189,6 +190,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     @SuppressLint("MissingPermission")
     fun startLocationUpdates() {
+        navEngine.startCompass()
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
             .setMinUpdateIntervalMillis(500L)
             .setMinUpdateDistanceMeters(1f)
@@ -399,7 +401,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleNorthUp() {
-        _isNorthUp.value = !_isNorthUp.value
+        val next = !_isNorthUp.value
+        _isNorthUp.value = next
+        streamRenderer.isNorthUp = next
     }
 
     fun startNavigationTo(destination: LatLng, title: String = "Điểm đến") {
@@ -629,6 +633,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        navEngine.stopCompass()
         locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
         streamRenderer.stopStreamingLoop()
     }

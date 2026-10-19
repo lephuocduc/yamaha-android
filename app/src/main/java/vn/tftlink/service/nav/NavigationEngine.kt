@@ -2,6 +2,10 @@ package vn.tftlink.service.nav
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Geocoder
 import android.location.LocationManager
 import android.os.Build
@@ -92,6 +96,57 @@ class NavigationEngine private constructor(
 
     private val _currentSpeedKmh = MutableStateFlow(0.0)
     val currentSpeedKmh: StateFlow<Double> = _currentSpeedKmh.asStateFlow()
+
+    // Cảm biến La bàn điện tử (Compass / Rotation Vector) cho chế độ đứng yên hoặc tốc độ thấp (< 3 km/h)
+    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+    private val rotationSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        ?: sensorManager?.getDefaultSensor(Sensor.TYPE_ORIENTATION)
+
+    private val sensorListener = object : SensorEventListener {
+        private val rotationMatrix = FloatArray(9)
+        private val orientationAngles = FloatArray(3)
+        private var lastAzimuth = 0f
+
+        override fun onSensorChanged(event: SensorEvent?) {
+            if (event == null) return
+            // Chuẩn iOS: Chỉ sử dụng la bàn cảm biến khi xe đứng yên hoặc tốc độ rất thấp (< 3.0 km/h)
+            if (_currentSpeedKmh.value >= 3.0) return
+
+            val azimuth = when (event.sensor.type) {
+                Sensor.TYPE_ROTATION_VECTOR -> {
+                    SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                    SensorManager.getOrientation(rotationMatrix, orientationAngles)
+                    (Math.toDegrees(orientationAngles[0].toDouble()).toFloat() + 360f) % 360f
+                }
+                Sensor.TYPE_ORIENTATION -> {
+                    (event.values[0] + 360f) % 360f
+                }
+                else -> return
+            }
+
+            var diff = (azimuth - lastAzimuth) % 360f
+            if (diff > 180f) diff -= 360f
+            if (diff < -180f) diff += 360f
+            // Bộ lọc suy hao dao động (Jitter Damping) triệt tiêu rung lắc la bàn
+            if (kotlin.math.abs(diff) >= 2.0f) {
+                val smoothed = (lastAzimuth + diff * 0.4f + 360f) % 360f
+                lastAzimuth = smoothed
+                _currentHeading.value = smoothed
+            }
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    }
+
+    fun startCompass() {
+        rotationSensor?.let { sensor ->
+            sensorManager?.registerListener(sensorListener, sensor, SensorManager.SENSOR_DELAY_UI)
+        }
+    }
+
+    fun stopCompass() {
+        sensorManager?.unregisterListener(sensorListener)
+    }
 
     private val _isNavigating = MutableStateFlow(false)
     val isNavigating: StateFlow<Boolean> = _isNavigating.asStateFlow()
@@ -249,12 +304,14 @@ class NavigationEngine private constructor(
         if (!isValidCoordinate(latLng)) return
         _currentLocation.value = latLng
         _currentSpeedKmh.value = speedKmh
-        // Chỉ cập nhật heading khi có giá trị hợp lệ (> 0°) hoặc xe đang di chuyển.
-        // Khi đứng yên (đèn đỏ) và GPS gửi heading = 0°, giữ nguyên hướng cũ để bản đồ không bị xoay giật.
-        if (heading > 0.5f || speedKmh >= 2.0 || _currentHeading.value == 0f) {
-            if (heading > 0f) {
-                _currentHeading.value = heading
-            }
+
+        // Chuẩn logic iOS:
+        // - Khi di chuyển (speedKmh >= 3.0 km/h) và GPS có course/bearing (> 0°): ưu tiên course từ GPS.
+        // - Khi đứng yên (speedKmh < 3.0 km/h): giữ nguyên hướng hoặc dùng la bàn cảm biến từ sensorListener.
+        if (speedKmh >= 3.0 && heading > 0f) {
+            _currentHeading.value = heading
+        } else if (_currentHeading.value == 0f && heading > 0f) {
+            _currentHeading.value = heading
         }
 
         // Lưu vết vị trí cuối cùng để khôi phục ngay khi mở app
