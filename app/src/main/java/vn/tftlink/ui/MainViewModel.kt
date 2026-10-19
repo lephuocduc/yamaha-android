@@ -654,10 +654,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val isGpsEnabled = lm?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) == true ||
                 lm?.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) == true
         sb.appendLine("Bluetooth: ${if (isBtEnabled) "BẬT" else "TẮT"} | Vị trí (GPS máy): ${if (isGpsEnabled) "BẬT" else "TẮT (CẦN BẬT ĐỂ QUÉT BLE TRÊN ANDROID 9)"}")
-        val bondedBikes = btAdapter?.bondedDevices?.filter {
-            vn.tftlink.service.ble.YamahaCCUManager.isYamahaBikeCCU(it.name ?: "", emptyList())
-        } ?: emptyList()
-        sb.appendLine("Xe đã ghép đôi trong máy: ${if (bondedBikes.isEmpty()) "Chưa có thiết bị xe nào" else bondedBikes.joinToString { "${it.name} (${it.address})" }}")
+        sb.appendLine("Trạng thái Bluetooth Adapter: isDiscovering=${btAdapter?.isDiscovering}, scanMode=${btAdapter?.scanMode}")
+
+        val allBonded = btAdapter?.bondedDevices?.toList() ?: emptyList()
+        sb.appendLine("Danh sách thiết bị Bluetooth đã ghép đôi trong máy (${allBonded.size} thiết bị):")
+        if (allBonded.isEmpty()) {
+            sb.appendLine("  • (Chưa có thiết bị nào ghép đôi với điện thoại)")
+        } else {
+            allBonded.forEach { dev ->
+                val isBike = vn.tftlink.service.ble.YamahaCCUManager.isYamahaBikeCCU(dev.name ?: "", emptyList())
+                val tag = if (isBike) " ➔ [XE MÁY YAMAHA CCU]" else ""
+                val devType = vn.tftlink.service.ble.YamahaCCUManager.getDeviceTypeString(dev.type)
+                sb.appendLine("  • ${dev.name ?: "(Không có tên)"} | MAC: ${dev.address} | $devType | Class: ${dev.bluetoothClass?.deviceClass}$tag")
+            }
+        }
         sb.appendLine("Trạng thái kết nối xe: ${connectionState.value}")
         sb.appendLine("Xe đang kết nối: ${connectedBike.value?.name ?: "Chưa kết nối"} (${connectedBike.value?.address ?: "N/A"})")
         sb.appendLine("Ắc quy xe: ${telemetry.value.batteryVoltage} V | Nhiệt độ máy: ${telemetry.value.engineTemperature} °C | Vòng tua: ${telemetry.value.rpm} RPM | Nhiên liệu: ${telemetry.value.fuelPercent}%")

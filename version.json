@@ -1,6 +1,6 @@
 {
-  "versionCode": 79,
-  "versionName": "0.5.49",
-  "releaseNotes": "1) Bản đồ chiếu lên xe luôn ở chế độ Siêu nét Full HD, bỏ tùy chọn độ phân giải; 2) Nội dung cập nhật phần mềm hiển thị từng mục, có thể cuộn khi dài; 3) Sửa lỗi vỡ layout khi chọn các tuyến đường thay thế; 4) Lộ trình trên bản đồ có viền đen giúp dễ nhìn hơn; 5) Tự ẩn bàn phím khi chọn địa chỉ tìm kiếm; 6) Bắt đầu dẫn đường tự bám theo xe và xoay theo hướng xe (Head Tracking), thoát dẫn đường tự zoom rộng và trở về North-Up; 7) Rút gọn thông tin phần mềm, thêm thông tin tác giả trong Cài đặt.",
+  "versionCode": 80,
+  "versionName": "0.5.50",
+  "releaseNotes": "1) Bổ sung bộ ghi log chẩn đoán chuyên sâu Bluetooth: Bắt gói yêu cầu ghép đôi (Pairing Request), mã xác thực 6 số (Passkey), trạng thái liên kết phần cứng (ACL Connect/Disconnect), trạng thái Bluetooth Adapter; 2) Bắt và giải mã chính xác 11 mã lỗi hủy ghép đôi (EXTRA_REASON: AUTH_TIMEOUT, AUTH_REJECTED, AUTH_FAILED, REPEATED_ATTEMPTS...); 3) Hiển thị toàn bộ thiết bị Bluetooth đã ghép đôi trong máy (MAC, Loại thiết bị Classic/LE/Dual, Bluetooth Class); 4) Khắc phục triệt để lỗi 133 (GATT_ERROR) khi kết nối lại bằng cơ chế safelyCloseGatt (disconnect + giải phóng bộ nhớ đệm cache bằng reflection + close + delay 350ms); 5) Thêm nút mở nhanh Cài đặt Bluetooth điện thoại trực tiếp trong màn hình Cài đặt.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

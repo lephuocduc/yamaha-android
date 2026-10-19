@@ -1092,3 +1092,40 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
   6. **Tự chuyển góc nhìn**: `MainViewModel.setNorthUp()`; `startNavigation()` → Head Tracking, `stopNavigation()` → North-Up. Trong `LiveNavigationScreen`, `LaunchedEffect(isNavigating)` chỉ phản ứng khi THỰC SỰ chuyển trạng thái (so với `wasNavigating`) để không reset lựa chọn thủ công khi quay lại tab; khi thoát gọi `setZoom(15.0)`.
   7. **Camera bám xe ngoài dẫn đường không ép zoom**: `animateTo(point, null, 500L)` khi không dẫn đường — nếu ép 16.5 như trước, lần cập nhật GPS kế tiếp sẽ ghi đè mức zoom rộng 15.0 vừa đặt khi thoát.
   8. **Cài đặt gọn**: Bỏ mọi chữ "thuật toán / Valhalla"; mục đổi tên "BẢN ĐỒ XE"; Thông tin phần mềm chỉ còn "MyNMAX vX (Build N)" + dòng Author mở `https://www.facebook.com/lephuocduc20`. Trang chủ bỏ phụ đề "NConnect Companion & TFT Stream".
+
+---
+
+### 📌 Quy tắc 28: Chẩn đoán Chuyên sâu Bluetooth & Khắc phục Triệt để GATT Error 133 (v0.5.50 - Build 80)
+- **Vấn đề đã gặp**:
+  1. Người dùng ghép đôi từ Cài đặt Bluetooth máy: Cả xe và điện thoại đều hỏi xác nhận, người dùng bấm đồng ý cả hai bên, xe hiện "Waiting for approval" một lúc rồi báo "Pairing Failed", nhưng trong điện thoại mục "Thiết bị đã kết nối trước đó" lại xuất hiện xe.
+  2. Kết nối từ app: Bấm kết nối thì app tải mãi, xe cũng tải mãi nhưng xe không hiện thông báo Approve, sau 25 giây báo Timeout rồi lần kết nối sau văng `Lỗi 133 (GATT_ERROR)`.
+- **Nguyên nhân gốc rễ**:
+  1. **Lỗi 133 (0x85 GATT_ERROR) trên Android 9 (Sony Xperia G8142 / Bluedroid stack)**: Khi Watchdog 25s timeout hoặc khi ngắt kết nối, app chỉ gọi `bluetoothGatt?.close()` trực tiếp mà không gọi `disconnect()`, đồng thời không gọi `refresh()` để xóa cache GATT client. Khi `connect()` chạy lại ngay sau đó, bảng quản lý GATT client trong kernel Android bị tràn slot, Bluedroid từ chối kết nối và trả về mã lỗi 133.
+  2. **Thiếu thông tin giám sát tiến trình ghép đôi Classic SSP**: App chỉ lắng nghe `ACTION_BOND_STATE_CHANGED` mà bỏ lỡ `ACTION_PAIRING_REQUEST` (chứa kiểu ghép đôi và mã PIN 6 số), bỏ lỡ `ACTION_ACL_CONNECTED`/`ACTION_ACL_DISCONNECTED` (tầng liên kết phần cứng), và không đọc trường phụ ẩn `android.bluetooth.device.extra.REASON` (lý do hủy ghép đôi).
+  3. **Nhật ký chẩn đoán bị lọc ẩn**: Hàm xuất log trước đây chỉ in các thiết bị thỏa mãn `isYamahaBikeCCU`, nếu xe ghép đôi với tên khác hoặc chưa được phân loại thì log báo "Chưa có thiết bị xe nào", gây hiểu nhầm điện thoại chưa lưu xe.
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Bắt gói tin `ACTION_PAIRING_REQUEST`**:
+     - Bắt mọi broadcast yêu cầu ghép đôi Bluetooth từ hệ thống.
+     - Phân loại kiểu xác thực qua `EXTRA_PAIRING_VARIANT` (PIN, PASSKEY, PASSKEY_CONFIRMATION - so khớp mã 6 số, CONSENT...).
+     - Lấy mã xác nhận 6 số từ `EXTRA_PAIRING_KEY` và in ngay vào log với định dạng chuẩn `%06d`, hiển thị thông báo hướng dẫn người dùng bấm Đồng ý trên màn hình.
+  2. **Giám sát liên kết phần cứng `ACTION_ACL_CONNECTED` & `ACTION_ACL_DISCONNECTED`**:
+     - Ghi nhận chính xác từng thời điểm tầng vật lý RFCOMM/L2CAP bắt tay thành công hoặc bị đứt sóng.
+  3. **Giải mã chính xác 11 mã lỗi hủy ghép đôi (`EXTRA_REASON`)**:
+     - Đọc giá trị số từ intent extra `android.bluetooth.device.extra.REASON`.
+     - Phân tích và in rõ ràng:
+       * `1: AUTH_FAILED` (Mã PIN hoặc khóa bảo mật không khớp).
+       * `2: AUTH_REJECTED` (Bị từ chối ghép đôi - xe hoặc người dùng bấm Hủy. Hướng dẫn người dùng vào Menu trên xe để xóa liên kết điện thoại cũ).
+       * `3: AUTH_CANCELED` (Tiến trình bị hủy).
+       * `4: REMOTE_DEVICE_DOWN` (Mất tín hiệu hoặc xe đã tắt khóa điện).
+       * `5: DISCOVERY_IN_PROGRESS` (Xung đột do đang quét thiết bị).
+       * `6: AUTH_TIMEOUT` (Hết thời gian chờ phản hồi ghép đôi 30s).
+       * `7: REPEATED_ATTEMPTS` (Thử quá nhiều lần liên tiếp, xe tạm thời khóa bảo mật).
+       * `8: REMOTE_VALIDATION_FAILURE` (Xác thực thiết bị từ xa thất bại).
+       * `10: SMP_SECURITY_FAILED` & `11: SMP_KEY_DIST_FAILED`.
+  4. **Hiển thị toàn bộ thiết bị Bluetooth trong máy**:
+     - Nâng cấp `getFullDiagnosticLogText()` trong `MainViewModel.kt`: Liệt kê tất cả thiết bị đã ghép đôi kèm Tên, MAC, Phân loại (`Classic`, `LE`, `Dual`), Lớp thiết bị (`deviceClass`), gắn nhãn nhận diện `➔ [XE MÁY YAMAHA CCU]` và in trạng thái adapter (`isDiscovering`, `scanMode`).
+  5. **Cơ chế đóng GATT an toàn `safelyCloseGatt()`**:
+     - Thứ tự thực thi chuẩn: `gatt.disconnect()` -> Gọi hàm ẩn `gatt.refresh()` qua Java Reflection để xóa sạch bộ nhớ cache thiết bị trong stack -> `gatt.close()`.
+     - Chờ trễ `delay(350)` trước khi khởi tạo `connectGatt(..., TRANSPORT_LE)` mới, dứt điểm triệt để lỗi 133 do kẹt handle GATT.
+  6. **Phím tắt 1-chạm "Mở Cài đặt Bluetooth điện thoại"**:
+     - Bổ sung nút bấm trong card Cài đặt xe của `SettingsScreen.kt` mở trực tiếp `Settings.ACTION_BLUETOOTH_SETTINGS`, giúp người lái tiện thao tác ghép đôi hoặc xóa thiết bị cũ trên xe.
