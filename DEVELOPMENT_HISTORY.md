@@ -994,3 +994,33 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - Tuyến đang được chọn hiển thị nổi bật với viền sáng Yamaha Cyan và màu chữ Cyan đậm; tuyến còn lại hiển thị viền mờ và chữ xám. Khi bấm chọn Tuyến 2, trạng thái highlight chuyển sang Tuyến 2 tại chỗ mà hai nút không bao giờ bị đảo vị trí.
   5. **Hộp thoại đặt tên gợi nhớ khi thêm Yêu thích từ bản đồ (`LiveNavigationScreen.kt`)**:
      - Khi bấm nút "Yêu thích" trên thẻ thả ghim, hiển thị `AlertDialog` có sẵn `OutlinedTextField` điền sẵn tên địa chỉ gợi ý, cho phép người dùng tự do chỉnh sửa hoặc gõ tên gợi nhớ tùy ý trước khi bấm "Lưu".
+---
+
+### 📌 Quy tắc 24: Sửa triệt để lỗi Ghép đôi Bluetooth (Waiting for approval -> Pairing Failed), Xóa liên kết lệch pha & Thêm phản hồi kết nối trực quan (v0.5.46 - Build 76)
+- **Vấn đề đã gặp**:
+  1. **Lỗi Bluetooth từ Cài đặt Android ("Waiting for approval" -> "Pairing Failed")**:
+     - *Hiện tượng*: Người dùng vào Cài đặt Bluetooth trên điện thoại, thấy xe Yamaha CCU và bấm kết nối. Cả 2 bên đều hiện yêu cầu ghép đôi / mã PIN, người dùng bấm Đồng ý cả 2 bên. Trên đồng hồ xe hiển thị "Waiting for approval from Sony G8142..." rồi một lúc sau báo "Pairing Failed". Trong khi đó, trên điện thoại trong mục *Thiết bị đã kết nối trước đó* (Previously connected devices) lại hiển thị xe đã ghép đôi.
+     - *Nguyên nhân gốc rễ*: Hiện tượng lệch pha Bluetooth Dual-Mode (Asymmetric Pairing Desynchronization). Khi người dùng ghép đôi từ Cài đặt Android, hệ điều hành Android ghi Link Key vào bộ lưu trữ và ngay lập tức phát broadcast `ACTION_BOND_STATE_CHANGED(BOND_BONDED)`. Trong `YamahaCCUManager.kt`, nhánh này kích hoạt coroutine tự động kết nối sau vỏn vẹn 1.5 giây (`delay(1500L)`). Khoảng thời gian này quá ngắn trên Android 9 (Sony G8142, SoC Snapdragon 835 WCN3990). Trong lúc Android OS và CCU xe vẫn đang thực hiện bắt tay khám phá dịch vụ Bluetooth Classic SDP (RFCOMM), việc `YamahaCCUManager` phát lệnh `connectGatt(..., TRANSPORT_LE)` song song làm nghẽn stack HCI và ngắt kết nối ACL vật lý giữa chừng. Đồng hồ xe (đang treo ở "Waiting for approval") thấy kết nối ACL bị đứt nên hủy bỏ tiến trình và báo "Pairing Failed", đồng thời xóa link key của xe. Hậu quả là điện thoại đã lưu link key (Bonded) còn xe thì không (Unbonded). Sau đó, mọi lần thử kết nối tiếp theo từ điện thoại đều bị xe từ chối ngay lập tức.
+  2. **Bấm kết nối trong app bị im lặng hoàn toàn (Không phản hồi, không thông báo lỗi)**:
+     - *Hiện tượng*: Mở app, mở hộp thoại quét xe thì thấy xe trong danh sách. Khi bấm vào xe thì hộp thoại đóng lại ngay lập tức, không có thông báo đang kết nối, không có vòng quay tiến trình, không có thông báo lỗi hay bất kỳ phản hồi nào.
+     - *Nguyên nhân gốc rễ*:
+       + Nếu xe chưa ghép đôi (`BOND_NONE`), `connect(bike)` gọi `bluetoothDevice.createBond()` rồi `return` ngay lập tức mà không cập nhật `_state.value` (`_state` vẫn giữ nguyên là `DISCONNECTED`). Hộp thoại đóng ngay (`showScanDialog = false`), người dùng không hề biết rằng hệ thống đang yêu cầu xác nhận ghép đôi.
+       + Nếu xe đã ghép đôi trên điện thoại nhưng bị lệch pha với xe (xe đã xóa link key), app gọi `connectGatt` -> xe từ chối -> `gattCallback` lập tức gọi `handleDisconnection()` chuyển `_state` về `DISCONNECTED` mà không lưu vết hay hiển thị nguyên nhân lỗi lên giao diện.
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Khắc phục Race Condition & Tối ưu luồng ghép đôi (`YamahaCCUManager.kt`)**:
+     - *Tăng thời gian chờ hoàn tất bonding*: Tăng khoảng delay sau sự kiện `BOND_BONDED` từ 1.5s lên 6.0s (`delay(6000L)`), đảm bảo hệ điều hành Android và CCU xe hoàn tất 100% bắt tay Classic SDP và đồng hồ xe quay trở về màn hình vận hành chính trước khi app bắt đầu mở kênh BLE GATT.
+     - *Cập nhật trạng thái tức thì trong `connect()`*: Ngay khi người dùng bấm kết nối, lập tức gán `_state.value = ConnectionState.CONNECTING` và `_connectedBike.value = device`. Nếu thiết bị chưa ghép đôi, gọi `device.createBond()` và cập nhật `_lastConnectionError` thông báo: *"Đang yêu cầu ghép đôi Bluetooth... Vui lòng bấm 'Đồng ý' trên cả điện thoại và màn hình xe."*.
+     - *Dọn dẹp và chống xung đột GATT 133*: Đóng gatt cũ (`bluetoothGatt?.close()`), dừng quét BLE và chèn khoảng nghỉ 300ms trước khi `connectGatt` để tránh xung đột tài nguyên sóng vô tuyến.
+     - *Bộ đếm thời gian giám sát kết nối (Watchdog 20s)*: Nếu sau 20 giây kết nối không thành công hoặc xe không phản hồi, tự động hủy phiên kết nối và ghi nhận lỗi timeout chi tiết.
+     - *Bổ sung hàm `unpairBike(device)`*: Tích hợp cơ chế phản xạ Java (Java Reflection) gọi Hidden API `BluetoothDevice.removeBond()` của Android. Cho phép người dùng xóa trực tiếp liên kết ghép đôi bị lỗi khỏi bộ nhớ điện thoại ngay trong app mà không cần phải thoát ra mở Cài đặt Android.
+  2. **Bổ sung phản hồi tức thời & Xử lý lỗi (`MainViewModel.kt`)**:
+     - Xuất bản Flow `lastConnectionError`, các phương thức `clearConnectionError()` và `unpairBike(device)`.
+     - Trong `connectBike(device)`: Hiển thị ngay thông báo Toast trên màn hình thông báo rõ cho người lái biết đang kết nối hoặc đang yêu cầu xác nhận ghép đôi.
+  3. **Nâng cấp giao diện Quét thiết bị & Hướng dẫn sửa lỗi lệch pha (`MainDashboardScreen.kt`)**:
+     - *Thanh tiến trình kết nối thời gian thực*: Trên đầu hộp thoại quét thiết bị hiển thị banner trạng thái (vòng quay `CircularProgressIndicator` + tên xe + nhãn "Đang kết nối..." hoặc "Đang yêu cầu ghép đôi...").
+     - *Thẻ báo lỗi trực quan*: Nếu kết nối bị xe từ chối hoặc lỗi timeout, hiển thị thẻ màu đỏ neon chứa thông báo lỗi chi tiết cùng nút "Đóng".
+     - *Huy hiệu & Nút Hủy ghép 1-chạm*: Từng thiết bị trong danh sách quét hiển thị huy hiệu "ĐÃ GHÉP ĐÔI" (màu Cyan) hoặc "CHƯA GHÉP ĐÔI" (màu xám). Đối với thiết bị đã ghép đôi, bổ sung nút "HỦY GHÉP" (icon `LinkOff` màu cam đỏ) cho phép người dùng xóa nhanh liên kết cũ bị lỗi.
+     - *Hộp thoại Hướng dẫn khắc phục lệch pha ghép đôi 3 bước (`showPairingGuideDialog`)*:
+       1. Bấm nút "Hủy ghép" màu cam trên thiết bị trong danh sách quét của app.
+       2. Trên đồng hồ xe Yamaha: Vào Menu -> Cài đặt (Settings) -> Smartphone/Bluetooth -> Xóa liên kết điện thoại cũ.
+       3. Tắt khóa xe rồi bật lại, sau đó bấm kết nối trực tiếp ngay từ trong ứng dụng.

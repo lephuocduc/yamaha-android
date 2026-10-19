@@ -36,10 +36,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsWalk
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.LocationOn
@@ -48,7 +50,12 @@ import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Work
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -123,6 +130,8 @@ fun MainDashboardScreen(
     var showAddFavDialog by remember { mutableStateOf(false) }
     var showEditPlaceDialog by remember { mutableStateOf<String?>(null) } // "home" or "work"
     var showGasDialog by remember { mutableStateOf(false) }
+    var showPairingGuideDialog by remember { mutableStateOf(false) }
+    val lastConnectionError by viewModel.lastConnectionError.collectAsState()
     val nearbyGas by viewModel.nearbyGasStations.collectAsState()
     val isFetchingGas by viewModel.isFetchingGasStations.collectAsState()
     val gasError by viewModel.gasStationError.collectAsState()
@@ -215,6 +224,9 @@ fun MainDashboardScreen(
                 state = connectionState,
                 connectedBike = connectedBike,
                 isStreaming = isStreaming,
+                lastConnectionError = lastConnectionError,
+                onClearError = { viewModel.clearConnectionError() },
+                onOpenGuide = { showPairingGuideDialog = true },
                 onConnectClick = {
                     if (isStreaming) {
                         viewModel.stopStreaming()
@@ -326,15 +338,63 @@ fun MainDashboardScreen(
                 viewModel.stopScanning()
             },
             title = {
-                Text("Tìm xe Yamaha CCU", color = TextPrimary, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.BluetoothSearching, contentDescription = null, tint = YamahaCyan)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Tìm xe Yamaha CCU", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
             },
             text = {
                 Column {
                     Text(
                         "Bật chìa khóa xe của bạn để CCU phát sóng Bluetooth.",
                         color = TextSecondary,
-                        fontSize = 13.sp
+                        fontSize = 12.sp
                     )
+
+                    // Hiển thị trạng thái đang kết nối nếu có
+                    if (connectionState == BikeConnectionState.CONNECTING) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(YamahaCyan.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(color = YamahaCyan, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Đang kết nối tới ${connectedBike?.name ?: "xe"}...",
+                                color = YamahaCyan,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    // Hiển thị thông báo lỗi nếu có
+                    lastConnectionError?.let { err ->
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = NeonRed.copy(alpha = 0.15f)),
+                            border = BorderStroke(1.dp, NeonRed.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(err, color = Color(0xFFFF8A80), fontSize = 11.sp, lineHeight = 15.sp)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "💡 Xem hướng dẫn sửa lỗi Pairing Failed",
+                                    color = YamahaCyan,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.clickable { showPairingGuideDialog = true }
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
                     if (discoveredBikes.isEmpty()) {
                         Row(
@@ -344,33 +404,56 @@ fun MainDashboardScreen(
                         ) {
                             CircularProgressIndicator(color = YamahaCyan, modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text("Đang dò tìm thiết bị...", color = YamahaCyan, fontSize = 13.sp)
+                            Text("Đang dò tìm xe xung quanh...", color = YamahaCyan, fontSize = 13.sp)
                         }
                     } else {
                         discoveredBikes.forEach { bike ->
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .clickable {
-                                        viewModel.connectBike(bike)
-                                        showScanDialog = false
-                                    },
+                                    .padding(vertical = 4.dp),
                                 colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                                border = BorderStroke(1.dp, YamahaCyan)
+                                border = BorderStroke(1.dp, if (bike.isPaired) YamahaCyan else DarkSurfaceBorder)
                             ) {
                                 Row(
                                     modifier = Modifier.padding(12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Speed, contentDescription = null, tint = YamahaCyan)
+                                    Icon(Icons.Default.Speed, contentDescription = null, tint = if (bike.isPaired) YamahaCyan else TextSecondary)
                                     Spacer(modifier = Modifier.width(10.dp))
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(bike.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text("Tín hiệu: ${bike.rssi} dBm", color = TextMuted, fontSize = 11.sp)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = if (bike.isPaired) "Đã ghép đôi" else "Chưa ghép đôi",
+                                                color = if (bike.isPaired) YamahaCyan else TextMuted,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(" • ${bike.rssi} dBm", color = TextMuted, fontSize = 11.sp)
+                                        }
                                     }
-                                    Spacer(modifier = Modifier.weight(1f))
-                                    Text("Kết nối", color = NeonGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+
+                                    if (bike.isPaired) {
+                                        TextButton(
+                                            onClick = { viewModel.unpairBike(bike) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("Hủy ghép", color = TextMuted, fontSize = 11.sp)
+                                        }
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            viewModel.connectBike(bike)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = NeonGreen),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("Kết nối", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
                                 }
                             }
                         }
@@ -378,11 +461,88 @@ fun MainDashboardScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    showScanDialog = false
-                    viewModel.stopScanning()
-                }) {
-                    Text("Đóng", color = YamahaCyan)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = { showPairingGuideDialog = true }) {
+                        Text("Hướng dẫn ghép đôi", color = TextSecondary, fontSize = 12.sp)
+                    }
+                    TextButton(onClick = {
+                        showScanDialog = false
+                        viewModel.stopScanning()
+                    }) {
+                        Text("Đóng", color = YamahaCyan, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            containerColor = DarkSurface
+        )
+    }
+
+    // Dialog hướng dẫn khắc phục lỗi Pairing Failed
+    if (showPairingGuideDialog) {
+        AlertDialog(
+            onDismissRequest = { showPairingGuideDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.HelpOutline, contentDescription = null, tint = YamahaCyan)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Khắc phục lỗi ghép đôi xe", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        "Khi xe báo \"Pairing Failed\" hoặc \"Waiting for approval\", đó là do bộ nhớ Bluetooth trên xe và điện thoại bị lệch khóa bảo mật cũ. Hãy làm theo 3 bước sau:",
+                        color = TextSecondary,
+                        fontSize = 12.sp
+                    )
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
+                        border = BorderStroke(1.dp, YamahaCyan.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("Bước 1: Xóa kết nối cũ trên cả 2 bên", color = YamahaCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("• Trên điện thoại: Nhấn nút \"Hủy ghép\" cạnh tên xe trong danh sách tìm kiếm của app (hoặc vào Cài đặt Bluetooth máy chọn Quên thiết bị / Hủy ghép đôi).\n• Trên đồng hồ xe: Dùng nút gạt/menu trên cùm tay lái vào Cài đặt xe -> Xóa điện thoại đã đăng ký (Delete/Remove Smartphone).", color = TextPrimary, fontSize = 11.sp)
+                        }
+                    }
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
+                        border = BorderStroke(1.dp, DarkSurfaceBorder)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("Bước 2: Khởi động lại CCU xe", color = NeonOrange, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Tắt chìa khóa xe, đợi 3 giây rồi bật lại khóa điện để CCU xóa sạch bộ nhớ tạm và phát sóng mới.", color = TextPrimary, fontSize = 11.sp)
+                        }
+                    }
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
+                        border = BorderStroke(1.dp, DarkSurfaceBorder)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("Bước 3: Kết nối lại từ trong app", color = NeonGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Mở app, bấm \"Kết nối xe\" -> Chọn tên xe -> Khi màn hình điện thoại và đồng hồ xe hiện mã PIN 6 số, nhấn ĐỒNG Ý / GHÉP ĐÔI trên cả 2 bên.", color = TextPrimary, fontSize = 11.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showPairingGuideDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan)
+                ) {
+                    Text("Đã hiểu", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
             },
             containerColor = DarkSurface
@@ -688,6 +848,9 @@ fun ConnectionStatusCard(
     state: BikeConnectionState,
     connectedBike: BikeDevice?,
     isStreaming: Boolean,
+    lastConnectionError: String? = null,
+    onClearError: (() -> Unit)? = null,
+    onOpenGuide: (() -> Unit)? = null,
     onConnectClick: () -> Unit
 ) {
     val isConnected = state == BikeConnectionState.CONNECTED
@@ -757,6 +920,7 @@ fun ConnectionStatusCard(
                             state == BikeConnectionState.CONNECTED -> "Chiếu lên xe"
                             state == BikeConnectionState.AUTHENTICATING -> "Bắt đầu chiếu"
                             state == BikeConnectionState.SCANNING -> "Đang dò..."
+                            state == BikeConnectionState.CONNECTING -> "Đang kết nối..."
                             else -> "Kết nối xe"
                         },
                         fontWeight = FontWeight.Bold,
@@ -771,12 +935,54 @@ fun ConnectionStatusCard(
                 text = when {
                     isStreaming && !isConnected -> "Đã bật chiếu TFT. Vui lòng kết nối với xe để truyền hình ảnh."
                     connectedBike != null -> "Xe: ${connectedBike.name}"
+                    state == BikeConnectionState.CONNECTING -> "Đang thiết lập kết nối Bluetooth với xe..."
                     else -> "Bật chìa khóa xe để tự động kết nối..."
                 },
                 color = if (connectedBike != null) NeonGreen else if (isStreaming && !isConnected) NeonOrange else TextSecondary,
                 fontSize = 12.sp,
                 modifier = Modifier.fillMaxWidth()
             )
+
+            // Hiển thị thông báo lỗi / hướng dẫn kết nối nếu có
+            if (lastConnectionError != null && state != BikeConnectionState.CONNECTED && state != BikeConnectionState.STREAMING) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = NeonRed.copy(alpha = 0.12f)),
+                    border = BorderStroke(1.dp, NeonRed.copy(alpha = 0.4f)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = NeonRed, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Thông báo kết nối", color = NeonRed, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            if (onClearError != null) {
+                                IconButton(onClick = onClearError, modifier = Modifier.size(20.dp)) {
+                                    Icon(Icons.Default.Close, contentDescription = null, tint = TextMuted, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = lastConnectionError,
+                            color = TextPrimary,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                        if (onOpenGuide != null) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "💡 Nhấn vào đây để xem cách sửa lỗi Pairing Failed",
+                                color = YamahaCyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable { onOpenGuide() }
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

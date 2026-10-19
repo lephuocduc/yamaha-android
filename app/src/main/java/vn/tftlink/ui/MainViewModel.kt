@@ -36,6 +36,7 @@ import vn.tftlink.service.trip.TripHistoryManager
 import vn.tftlink.service.update.AppUpdateInfo
 import vn.tftlink.service.update.AppUpdateManager
 import vn.tftlink.service.update.UpdateStatus
+import android.bluetooth.BluetoothDevice
 import android.content.Intent
 import android.location.LocationManager
 import android.widget.Toast
@@ -71,6 +72,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val telemetry: StateFlow<BikeTelemetry> = ccuManager.telemetry
     val currentRoadNameOnTFT: StateFlow<String> = ccuManager.currentRoadNameOnTFT
     val diagnosticLogs: StateFlow<List<String>> = ccuManager.diagnosticLogs
+    val lastConnectionError: StateFlow<String?> = ccuManager.lastConnectionError
 
     // TFT Mirror Bitmap
     val lastFrameBitmap: StateFlow<Bitmap?> = streamRenderer.lastFrameBitmap
@@ -252,7 +254,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun stopScanning() = stopScan()
 
     fun connectBike(device: BikeDevice) {
+        val bluetoothDevice = ccuManager.getBluetoothDevice(device.address)
+        if (bluetoothDevice != null && bluetoothDevice.bondState == BluetoothDevice.BOND_NONE) {
+            Toast.makeText(
+                getApplication(),
+                "Đang gửi yêu cầu ghép đôi tới ${device.name}. Vui lòng bấm Đồng ý trên điện thoại và xe!",
+                Toast.LENGTH_LONG
+            ).show()
+        } else {
+            Toast.makeText(
+                getApplication(),
+                "Đang kết nối tới ${device.name}...",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
         ccuManager.connect(device)
+    }
+
+    fun unpairBike(device: BikeDevice) {
+        val success = ccuManager.unpairBike(device)
+        Toast.makeText(
+            getApplication(),
+            if (success) "Đã hủy ghép đôi ${device.name}. Hãy vào Cài đặt trên xe để xóa điện thoại cũ."
+            else "Không thể hủy ghép đôi ${device.name}",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    fun clearConnectionError() {
+        ccuManager.clearConnectionError()
     }
 
     fun disconnectBike() {
