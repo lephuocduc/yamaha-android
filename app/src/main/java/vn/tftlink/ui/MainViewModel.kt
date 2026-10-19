@@ -45,6 +45,7 @@ import kotlinx.coroutines.withContext
 import vn.tftlink.service.nav.GoogleMapsShareResolver
 import vn.tftlink.service.nav.ResolvedDestination
 import vn.tftlink.service.renderer.ClusterMapSource
+import vn.tftlink.service.renderer.TFTResolution
 import java.io.File
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -107,6 +108,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Cluster Map Engine Mode (Google Maps Traffic vs OSM CartoDB)
     private val _clusterMapSource = MutableStateFlow(streamRenderer.clusterMapSource)
     val clusterMapSource: StateFlow<ClusterMapSource> = _clusterMapSource.asStateFlow()
+
+    // TFT Projection Header Font Size & Resolution
+    val tftResolution: StateFlow<TFTResolution> = streamRenderer.tftResolution
+    val headerFontSize: StateFlow<Float> = streamRenderer.headerFontSize
+
+    fun setTFTResolution(res: TFTResolution) {
+        streamRenderer.setResolution(res)
+    }
+
+    fun setHeaderFontSize(size: Float) {
+        streamRenderer.setHeaderFontSizeValue(size)
+    }
 
     // Shared destination from Google Maps app
     private val _sharedDestinationEvent = MutableStateFlow<ResolvedDestination?>(null)

@@ -30,6 +30,22 @@ import kotlin.math.pow
 import kotlin.math.tan
 
 /**
+ * Các tùy chọn độ phân giải màn hình chiếu đồng hồ xe máy Yamaha (TFT Super-sampling)
+ */
+enum class TFTResolution(
+    val id: String,
+    val title: String,
+    val width: Int,
+    val height: Int,
+    val scaleFactor: Float,
+    val description: String
+) {
+    SD_480("sd_480", "Tiêu chuẩn SD (480 × 234)", 480, 234, 1.0f, "Độ phân giải gốc ban đầu"),
+    HD_720("hd_720", "Độ nét cao HD (720 × 351)", 720, 351, 1.5f, "Cân bằng độ nét và tốc độ"),
+    FHD_960("fhd_960", "Siêu nét Full HD (960 × 468)", 960, 468, 2.0f, "Khuyên dùng - Nét gấp 4 lần điểm ảnh")
+}
+
+/**
  * Renderer tạo khung hình Bản Đồ OpenStreetMap cho màn hình TFT xe máy Yamaha
  * Tối ưu hóa 100% chạy nền qua Canvas / Bitmap pipeline, nén JPEG gửi lên xe
  */
@@ -42,29 +58,66 @@ enum class ClusterMapSource(
 ) {
     GOOGLE_MAPS_TRAFFIC(
         "gmap_traffic",
-        "Google Maps (Mật độ giao thông LIVE - Khuyên dùng)",
-        "https://mt1.google.com/vt/lyrs=m,traffic&hl=vi&x={x}&y={y}&z={z}",
-        "gmaps_traffic",
-        "© Google Maps Traffic"
+        "Google Maps (Mật độ giao thông LIVE - Siêu nét HD)",
+        "https://mt1.google.com/vt/lyrs=m,traffic&hl=vi&scale=2&x={x}&y={y}&z={z}",
+        "gmaps_traffic_hd",
+        "© Google Maps Traffic HD"
     ),
     OSM_CARTO(
         "osm_carto",
-        "CartoDB Voyager (OpenStreetMap)",
-        "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_4mz7_1_fb3f57cfec3a69a35eb8be87",
-        "voyager",
-        "© OpenStreetMap • CartoDB"
+        "CartoDB Voyager (OpenStreetMap - Siêu nét HD)",
+        "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png?key=cb1_4mz7_1_fb3f57cfec3a69a35eb8be87",
+        "voyager_hd",
+        "© OpenStreetMap • CartoDB HD"
     )
 }
 
 class TFTStreamRenderer(
     private val context: Context,
     private val scope: CoroutineScope,
-    var targetWidth: Int = 480,
-    var targetHeight: Int = 234
+    var targetWidth: Int = 960,
+    var targetHeight: Int = 468
 ) {
     companion object {
         val ZOOM_LEVELS = doubleArrayOf(200.0, 400.0, 800.0, 1600.0, 3000.0)
         val OSM_ZOOMS = intArrayOf(18, 17, 16, 15, 14)
+    }
+
+    private val prefs = context.getSharedPreferences("tft_settings_prefs", Context.MODE_PRIVATE)
+
+    private val _tftResolution = MutableStateFlow(
+        try {
+            val savedId = prefs.getString("tft_resolution", TFTResolution.FHD_960.id)
+            TFTResolution.values().firstOrNull { it.id == savedId } ?: TFTResolution.FHD_960
+        } catch (_: Exception) {
+            TFTResolution.FHD_960
+        }
+    )
+    val tftResolution: StateFlow<TFTResolution> = _tftResolution.asStateFlow()
+
+    private val _headerFontSize = MutableStateFlow(
+        prefs.getFloat("header_font_size", 18f)
+    )
+    val headerFontSize: StateFlow<Float> = _headerFontSize.asStateFlow()
+
+    var headerFontSizeSp: Float
+        get() = _headerFontSize.value
+        set(value) {
+            _headerFontSize.value = value
+            prefs.edit().putFloat("header_font_size", value).apply()
+            triggerImmediateReRender(null)
+        }
+
+    fun setResolution(res: TFTResolution) {
+        _tftResolution.value = res
+        targetWidth = res.width
+        targetHeight = res.height
+        prefs.edit().putString("tft_resolution", res.id).apply()
+        triggerImmediateReRender(null)
+    }
+
+    fun setHeaderFontSizeValue(size: Float) {
+        headerFontSizeSp = size
     }
 
     private val tileEngine = OSMTileEngine.getInstance(context)
@@ -77,6 +130,9 @@ class TFTStreamRenderer(
         }
 
     init {
+        val savedRes = _tftResolution.value
+        targetWidth = savedRes.width
+        targetHeight = savedRes.height
         tileEngine.updateStyle(clusterMapSource.tileUrlTemplate, clusterMapSource.styleKey)
     }
 
@@ -151,7 +207,7 @@ class TFTStreamRenderer(
         getIsRerouting: () -> Boolean,
         onFrameReady: (ByteArray) -> Unit
     ) {
-        stopStreamingLoop()
+        streamingJob?.cancel()
         streamingJob = scope.launch(Dispatchers.Default) {
             while (isActive) {
                 val loc = getLocation()
@@ -196,6 +252,8 @@ class TFTStreamRenderer(
         this.lastRenderedSpeedKmh = speedKmh
         this.lastRenderedIsRerouting = isRerouting
 
+        val scaleFactor = (targetWidth / 480f).coerceAtLeast(1.0f)
+
         // Tự động tải trước ngói bản đồ dọc lộ trình
         if (activeRoute != null && activeRoute.coordinates.isNotEmpty()) {
             val key = "${activeRoute.coordinates.size}_${activeRoute.distanceMeters.toInt()}"
@@ -212,8 +270,8 @@ class TFTStreamRenderer(
         canvas.drawColor(Color.rgb(20, 26, 36))
 
         if (location == null) {
-            val title = if (clusterMapSource == ClusterMapSource.GOOGLE_MAPS_TRAFFIC) "Google Maps Live Traffic" else "OpenStreetMap"
-            drawFallbackScreen(canvas, title, "Đang lấy tín hiệu GPS...", speedKmh)
+            val title = if (clusterMapSource == ClusterMapSource.GOOGLE_MAPS_TRAFFIC) "Google Maps Live Traffic HD" else "OpenStreetMap HD"
+            drawFallbackScreen(canvas, title, "Đang lấy tín hiệu GPS...", speedKmh, scaleFactor)
             _lastFrameBitmap.value = bitmap
             return@withLock compressToJpeg(bitmap)
         }
@@ -223,15 +281,15 @@ class TFTStreamRenderer(
         val lon = location.longitude
         val lat = location.latitude.coerceIn(-85.0511, 85.0511)
 
-        val worldX = (lon + 180.0) / 360.0 * n * 256.0
+        val worldX = (lon + 180.0) / 360.0 * n * 256.0 * scaleFactor
         val latRad = Math.toRadians(lat)
-        val worldY = (1.0 - ln(tan(latRad) + 1.0 / cos(latRad)) / Math.PI) / 2.0 * n * 256.0
+        val worldY = (1.0 - ln(tan(latRad) + 1.0 / cos(latRad)) / Math.PI) / 2.0 * n * 256.0 * scaleFactor
 
-        val centerTileX = (worldX / 256.0).toInt()
-        val centerTileY = (worldY / 256.0).toInt()
+        val centerTileX = ((lon + 180.0) / 360.0 * n).toInt()
+        val centerTileY = ((1.0 - ln(tan(latRad) + 1.0 / cos(latRad)) / Math.PI) / 2.0 * n).toInt()
 
-        val originWorldX = ((centerTileX - 1) * 256).toDouble()
-        val originWorldY = ((centerTileY - 1) * 256).toDouble()
+        val originWorldX = ((centerTileX - 1) * 256.0) * scaleFactor
+        val originWorldY = ((centerTileY - 1) * 256.0) * scaleFactor
 
         val bikeCanvasX = (worldX - originWorldX).toFloat()
         val bikeCanvasY = (worldY - originWorldY).toFloat()
@@ -247,7 +305,7 @@ class TFTStreamRenderer(
         canvas.rotate(-mapRotation)
         canvas.translate(-bikeCanvasX, -bikeCanvasY)
 
-        // 2. Vẽ 9 ngói OpenStreetMap (3x3 grid) xung quanh vị trí xe
+        val tileDim = 256f * scaleFactor
         val gridPaint = Paint().apply {
             color = Color.rgb(26, 31, 41)
             style = Paint.Style.FILL
@@ -255,20 +313,25 @@ class TFTStreamRenderer(
         val gridBorder = Paint().apply {
             color = Color.argb(76, 51, 51, 51)
             style = Paint.Style.STROKE
-            strokeWidth = 1f
+            strokeWidth = 1f * scaleFactor
+        }
+        val tilePaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+            isFilterBitmap = true
+            isDither = true
         }
 
+        // 2. Vẽ 9 ngói bản đồ HD (3x3 grid) xung quanh vị trí xe
         for (dx in -1..1) {
             for (dy in -1..1) {
                 val tx = centerTileX + dx
                 val ty = centerTileY + dy
-                val left = (dx + 1) * 256f
-                val top = (dy + 1) * 256f
-                val rect = RectF(left, top, left + 256f, top + 256f)
+                val left = (dx + 1) * tileDim
+                val top = (dy + 1) * tileDim
+                val rect = RectF(left, top, left + tileDim, top + tileDim)
 
                 val tile = tileEngine.getCachedTile(tx, ty, zoom)
                 if (tile != null) {
-                    canvas.drawBitmap(tile, null, rect, null)
+                    canvas.drawBitmap(tile, null, rect, tilePaint)
                 } else {
                     canvas.drawRect(rect, gridPaint)
                     canvas.drawRect(rect, gridBorder)
@@ -279,32 +342,32 @@ class TFTStreamRenderer(
             }
         }
 
-        // Tăng độ tương phản cho nền bản đồ ngoài trời nắng
+        // Tăng độ tương phản nhẹ cho nền bản đồ ngoài trời nắng
         val contrastPaint = Paint().apply {
-            color = Color.argb(40, 0, 0, 0)
+            color = Color.argb(30, 0, 0, 0)
         }
-        canvas.drawRect(0f, 0f, 768f, 768f, contrastPaint)
+        canvas.drawRect(0f, 0f, 3 * tileDim, 3 * tileDim, contrastPaint)
 
-        // 3. Vẽ lộ trình OpenStreetMap (Polyline)
+        // 3. Vẽ lộ trình OpenStreetMap (Polyline) với độ nét cao
         for (alt in alternativeRoutes) {
             if (alt.coordinates.size > 1) {
-                drawRoutePolyline(canvas, alt, zoom, originWorldX, originWorldY, isAlternative = true)
+                drawRoutePolyline(canvas, alt, zoom, originWorldX, originWorldY, isAlternative = true, scaleFactor = scaleFactor)
             }
         }
         if (activeRoute != null && activeRoute.coordinates.size > 1) {
-            drawRoutePolyline(canvas, activeRoute, zoom, originWorldX, originWorldY, isAlternative = false)
+            drawRoutePolyline(canvas, activeRoute, zoom, originWorldX, originWorldY, isAlternative = false, scaleFactor = scaleFactor)
         }
 
         canvas.restore()
 
         // 4. Vẽ biểu tượng xe máy trung tâm màn hình (Chevron xanh Neon Cyan)
-        drawMotorcycleMarker(canvas, centerPtX, centerPtY, heading, isNorthUp)
+        drawMotorcycleMarker(canvas, centerPtX, centerPtY, heading, isNorthUp, scaleFactor)
 
         // 5. Thanh chỉ dẫn điều hướng Turn-by-Turn phía trên (khoảng cách + tên đường)
-        drawTopNavigationBanner(canvas, instruction, isRerouting)
+        drawTopNavigationBanner(canvas, instruction, isRerouting, scaleFactor)
 
         // 6. Nhãn bản quyền
-        drawAttribution(canvas)
+        drawAttribution(canvas, scaleFactor)
 
         _lastFrameBitmap.value = bitmap
         compressToJpeg(bitmap)
@@ -319,17 +382,18 @@ class TFTStreamRenderer(
         zoom: Int,
         originX: Double,
         originY: Double,
-        isAlternative: Boolean
+        isAlternative: Boolean,
+        scaleFactor: Float = 1.0f
     ) {
         val n = 2.0.pow(zoom)
         val path = Path()
         var started = false
 
         for (coord in route.coordinates) {
-            val ptWorldX = (coord.longitude + 180.0) / 360.0 * n * 256.0
+            val ptWorldX = (coord.longitude + 180.0) / 360.0 * n * 256.0 * scaleFactor
             val safeLat = coord.latitude.coerceIn(-85.0511, 85.0511)
             val ptLatRad = Math.toRadians(safeLat)
-            val ptWorldY = (1.0 - ln(tan(ptLatRad) + 1.0 / cos(ptLatRad)) / Math.PI) / 2.0 * n * 256.0
+            val ptWorldY = (1.0 - ln(tan(ptLatRad) + 1.0 / cos(ptLatRad)) / Math.PI) / 2.0 * n * 256.0 * scaleFactor
 
             val px = (ptWorldX - originX).toFloat()
             val py = (ptWorldY - originY).toFloat()
@@ -349,39 +413,39 @@ class TFTStreamRenderer(
             val outer = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.argb(204, 13, 20, 31)
                 style = Paint.Style.STROKE
-                strokeWidth = 12f
+                strokeWidth = 12f * scaleFactor
                 strokeCap = Paint.Cap.ROUND
                 strokeJoin = Paint.Join.ROUND
             }
             val inner = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.argb(217, 128, 153, 179)
+                color = Color.rgb(100, 116, 139)
                 style = Paint.Style.STROKE
-                strokeWidth = 7f
+                strokeWidth = 7f * scaleFactor
                 strokeCap = Paint.Cap.ROUND
                 strokeJoin = Paint.Join.ROUND
             }
             canvas.drawPath(path, outer)
             canvas.drawPath(path, inner)
         } else {
-            // Tuyến chính: Viền đen cực dày 18px + Thân Racing Neon Cyan 12px + Lõi trắng 4.5px
+            // Tuyến chính: Viền đen cực dày + Thân Racing Neon Cyan + Lõi trắng
             val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.rgb(0, 10, 31)
                 style = Paint.Style.STROKE
-                strokeWidth = 18f
+                strokeWidth = 16f * scaleFactor
                 strokeCap = Paint.Cap.ROUND
                 strokeJoin = Paint.Join.ROUND
             }
             val body = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.rgb(0, 224, 255) // Racing Neon Cyan
                 style = Paint.Style.STROKE
-                strokeWidth = 12f
+                strokeWidth = 10f * scaleFactor
                 strokeCap = Paint.Cap.ROUND
                 strokeJoin = Paint.Join.ROUND
             }
             val core = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.WHITE
                 style = Paint.Style.STROKE
-                strokeWidth = 4.5f
+                strokeWidth = 4f * scaleFactor
                 strokeCap = Paint.Cap.ROUND
                 strokeJoin = Paint.Join.ROUND
             }
@@ -399,7 +463,8 @@ class TFTStreamRenderer(
         cx: Float,
         cy: Float,
         heading: Float,
-        isNorthUp: Boolean
+        isNorthUp: Boolean,
+        scaleFactor: Float = 1.0f
     ) {
         canvas.save()
         canvas.translate(cx, cy)
@@ -412,28 +477,28 @@ class TFTStreamRenderer(
             color = Color.argb(89, 0, 153, 255)
             style = Paint.Style.FILL
         }
-        canvas.drawCircle(0f, 0f, 22f, haloPaint)
+        canvas.drawCircle(0f, 0f, 22f * scaleFactor, haloPaint)
 
         // Viền đen tương phản
         val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(0, 13, 31)
             style = Paint.Style.FILL
         }
-        canvas.drawCircle(0f, 0f, 13f, borderPaint)
+        canvas.drawCircle(0f, 0f, 13f * scaleFactor, borderPaint)
 
         // Vòng thân xe xanh Cyan
         val cyanPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(0, 224, 255)
             style = Paint.Style.FILL
         }
-        canvas.drawCircle(0f, 0f, 11f, cyanPaint)
+        canvas.drawCircle(0f, 0f, 11f * scaleFactor, cyanPaint)
 
         // Mũi tên định hướng trắng
         val arrowPath = Path().apply {
-            moveTo(0f, -15f)
-            lineTo(8f, 9f)
-            lineTo(0f, 4.5f)
-            lineTo(-8f, 9f)
+            moveTo(0f, -15f * scaleFactor)
+            lineTo(8f * scaleFactor, 9f * scaleFactor)
+            lineTo(0f, 4.5f * scaleFactor)
+            lineTo(-8f * scaleFactor, 9f * scaleFactor)
             close()
         }
         val whitePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -447,32 +512,37 @@ class TFTStreamRenderer(
 
     /**
      * Dải banner chỉ dẫn Turn-by-Turn phía trên (khoảng cách Neon Green + Tên đường trắng)
+     * Tự động điều chỉnh kích thước theo cỡ chữ người dùng chọn và độ phân giải canvas
      */
     private fun drawTopNavigationBanner(
         canvas: Canvas,
         instruction: NavigationInstruction,
-        isRerouting: Boolean
+        isRerouting: Boolean,
+        scaleFactor: Float = 1.0f
     ) {
         if (!instruction.isNavigating && !isRerouting && !instruction.hasArrived) return
 
-        val bannerHeight = 36f
+        val baseFontSize = _headerFontSize.value.coerceIn(12f, 32f)
+        val effectiveFontSize = baseFontSize * scaleFactor
+        val bannerHeight = (baseFontSize * 2.0f).coerceAtLeast(32f) * scaleFactor
+        val baselineY = bannerHeight * 0.70f
         val bannerRect = RectF(0f, 0f, targetWidth.toFloat(), bannerHeight)
 
         if (isRerouting) {
             val bgPaint = Paint().apply { color = Color.argb(250, 31, 20, 5) }
             val linePaint = Paint().apply {
                 color = Color.YELLOW
-                strokeWidth = 2f
+                strokeWidth = 2f * scaleFactor
             }
             canvas.drawRect(bannerRect, bgPaint)
             canvas.drawLine(0f, bannerHeight, targetWidth.toFloat(), bannerHeight, linePaint)
 
             val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.YELLOW
-                textSize = 16f
+                textSize = effectiveFontSize * 0.9f
                 typeface = Typeface.DEFAULT_BOLD
             }
-            canvas.drawText("⚠️ ĐANG TÍNH LẠI LỘ TRÌNH MỚI...", 12f, 24f, textPaint)
+            canvas.drawText("⚠️ ĐANG TÍNH LẠI LỘ TRÌNH MỚI...", 12f * scaleFactor, baselineY, textPaint)
             return
         }
 
@@ -480,18 +550,18 @@ class TFTStreamRenderer(
             val bgPaint = Paint().apply { color = Color.argb(250, 8, 38, 15) }
             val linePaint = Paint().apply {
                 color = Color.rgb(0, 255, 115)
-                strokeWidth = 2f
+                strokeWidth = 2f * scaleFactor
             }
             canvas.drawRect(bannerRect, bgPaint)
             canvas.drawLine(0f, bannerHeight, targetWidth.toFloat(), bannerHeight, linePaint)
 
             val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.rgb(0, 255, 115)
-                textSize = 16f
+                textSize = effectiveFontSize * 0.9f
                 typeface = Typeface.DEFAULT_BOLD
             }
             val destText = if (instruction.destinationName.isEmpty()) "ĐIỂM ĐẾN" else instruction.destinationName
-            canvas.drawText("🎯 ĐÃ ĐẾN NƠI: $destText", 12f, 24f, textPaint)
+            canvas.drawText("🎯 ĐÃ ĐẾN NƠI: $destText", 12f * scaleFactor, baselineY, textPaint)
             return
         }
 
@@ -499,7 +569,7 @@ class TFTStreamRenderer(
         val bgPaint = Paint().apply { color = Color.argb(250, 10, 15, 23) }
         val dividerPaint = Paint().apply {
             color = Color.rgb(0, 224, 255)
-            strokeWidth = 2f
+            strokeWidth = 2f * scaleFactor
         }
         canvas.drawRect(bannerRect, bgPaint)
         canvas.drawLine(0f, bannerHeight, targetWidth.toFloat(), bannerHeight, dividerPaint)
@@ -510,65 +580,72 @@ class TFTStreamRenderer(
 
         val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(0, 255, 115)
-            textSize = 18f
+            textSize = effectiveFontSize
             typeface = Typeface.DEFAULT_BOLD
         }
         val whitePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
-            textSize = 18f
+            textSize = effectiveFontSize
             typeface = Typeface.DEFAULT_BOLD
         }
 
-        var x = 12f
-        canvas.drawText(distText, x, 25f, greenPaint)
+        var x = 12f * scaleFactor
+        canvas.drawText(distText, x, baselineY, greenPaint)
         x += greenPaint.measureText(distText)
 
-        canvas.drawText(actionText, x, 25f, greenPaint)
+        canvas.drawText(actionText, x, baselineY, greenPaint)
         x += greenPaint.measureText(actionText)
 
         if (roadText.isNotEmpty()) {
-            canvas.drawText(roadText, x, 25f, whitePaint)
+            canvas.drawText(roadText, x, baselineY, whitePaint)
         }
     }
 
-    private fun drawAttribution(canvas: Canvas) {
+    private fun drawAttribution(canvas: Canvas, scaleFactor: Float = 1.0f) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.argb(178, 153, 153, 153)
-            textSize = 9f
+            textSize = 9f * scaleFactor
         }
         val text = clusterMapSource.attribution
         val textWidth = paint.measureText(text)
-        canvas.drawText(text, targetWidth - textWidth - 8f, targetHeight - 8f, paint)
+        canvas.drawText(text, targetWidth - textWidth - 8f * scaleFactor, targetHeight - 8f * scaleFactor, paint)
     }
 
-    private fun drawFallbackScreen(canvas: Canvas, title: String, subtitle: String, speedKmh: Double) {
+    private fun drawFallbackScreen(
+        canvas: Canvas,
+        title: String,
+        subtitle: String,
+        speedKmh: Double,
+        scaleFactor: Float = 1.0f
+    ) {
         val gridPaint = Paint().apply {
             color = Color.argb(76, 51, 51, 51)
-            strokeWidth = 1f
+            strokeWidth = 1f * scaleFactor
         }
-        for (x in 0 until targetWidth step 40) {
+        val step = (40 * scaleFactor).toInt().coerceAtLeast(20)
+        for (x in 0 until targetWidth step step) {
             canvas.drawLine(x.toFloat(), 0f, x.toFloat(), targetHeight.toFloat(), gridPaint)
         }
-        for (y in 0 until targetHeight step 40) {
+        for (y in 0 until targetHeight step step) {
             canvas.drawLine(0f, y.toFloat(), targetWidth.toFloat(), y.toFloat(), gridPaint)
         }
 
         val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
-            textSize = 18f
+            textSize = 18f * scaleFactor
             typeface = Typeface.DEFAULT_BOLD
         }
         val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.GRAY
-            textSize = 13f
+            textSize = 13f * scaleFactor
         }
-        canvas.drawText(title, 24f, 40f, titlePaint)
-        canvas.drawText(subtitle, 24f, 68f, subPaint)
+        canvas.drawText(title, 24f * scaleFactor, 40f * scaleFactor, titlePaint)
+        canvas.drawText(subtitle, 24f * scaleFactor, 68f * scaleFactor, subPaint)
     }
 
     private fun compressToJpeg(bitmap: Bitmap): ByteArray {
         val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
         return stream.toByteArray()
     }
 }

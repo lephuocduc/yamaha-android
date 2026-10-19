@@ -1,6 +1,6 @@
 {
-  "versionCode": 76,
-  "versionName": "0.5.46",
-  "releaseNotes": "1) Khắc phục lỗi xung đột ghép đôi Bluetooth (Waiting for approval -> Pairing failed): Tăng thời gian chờ và chống xung đột LE GATT với Bluetooth Classic khi Android hoàn tất bonding; 2) Bổ sung phản hồi trực quan khi bấm kết nối xe trong app: Hiển thị banner trạng thái kết nối trực tiếp, thông báo Toast và thẻ báo lỗi chi tiết khi quá thời gian; 3) Thêm nút 'Hủy ghép' (Unpair) 1-chạm ngay trong app giúp xóa pairing lỗi trên điện thoại; 4) Thêm hộp thoại hướng dẫn 3 bước khắc phục tình trạng lệch ghép đôi giữa xe và điện thoại.",
+  "versionCode": 77,
+  "versionName": "0.5.47",
+  "releaseNotes": "1) Nâng cấp độ phân giải bản đồ siêu nét (HD / Full HD Super-sampling): Tích hợp ngói bản đồ Retina @2x (512x512) cho Google Maps Traffic & CartoDB, bổ sung bộ lọc bilinear filtering chống vỡ hạt; sửa lỗi phóng đại trên bản đồ lớn giúp đường xá và tên đường sắc nét từng chi tiết; 2) Thêm mục tùy chỉnh màn hình chiếu đồng hồ xe trong Cài đặt: Cho phép thay đổi cỡ chữ Header chỉ dẫn rẽ (14 - 28 pt) với thanh trượt và 4 phím tắt nhanh kèm thẻ xem trước trực tiếp; 3) Cho phép lựa chọn độ phân giải màn hình chiếu TFT (Siêu nét Full HD 960x468, HD 720x351, SD 480x234).",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

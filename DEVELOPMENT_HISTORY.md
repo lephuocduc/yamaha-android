@@ -1024,3 +1024,30 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
        1. Bấm nút "Hủy ghép" màu cam trên thiết bị trong danh sách quét của app.
        2. Trên đồng hồ xe Yamaha: Vào Menu -> Cài đặt (Settings) -> Smartphone/Bluetooth -> Xóa liên kết điện thoại cũ.
        3. Tắt khóa xe rồi bật lại, sau đó bấm kết nối trực tiếp ngay từ trong ứng dụng.
+---
+
+### 📌 Quy tắc 25: Nâng cấp Bản đồ Siêu nét (HD/Full HD Super-sampling) & Thêm Tùy chỉnh Cỡ chữ Header Màn hình Chiếu lên xe (v0.5.47 - Build 77)
+- **Vấn đề đã gặp**:
+  1. **Độ phân giải bản đồ còn quá thấp**:
+     - *Trên màn hình chiếu xe (TFT Mirror / Projection)*: Hình ảnh bản đồ chỉ dựng ở kích thước cố định 480 × 234 với ngói chuẩn 1x (256 × 256). Khi vẽ ngói bằng `canvas.drawBitmap` với cờ `paint = null`, hệ thống áp dụng phép nội suy Nearest Neighbor thô ráp, làm bản đồ bị răng cưa, vỡ hạt nặng nề mỗi khi xoay theo hướng lái xe (`canvas.rotate(-mapRotation)`).
+     - *Trên bản đồ lớn điện thoại (Osmdroid)*: Cấu hình `isTilesScaledToDpi = true` khiến ngói 512px bị Osmdroid nhân tiếp với mật độ điểm ảnh màn hình (density ~3.5 trên màn hình Sony 4K / Full HD+), làm ngói bị phóng đại gấp 3.5 lần, chữ to quá khổ và mất đi độ chi tiết sắc nét của ngói bản đồ.
+  2. **Cỡ chữ Header dẫn đường bị cố định cứng**:
+     - Thanh Turn-by-Turn header trên cùng của màn hình chiếu xe bị fix cứng ở cỡ chữ 18f và chiều cao 36f trong mã nguồn. Người lái không thể tùy chỉnh chữ to hơn khi đi ngoài trời nắng hoặc thu nhỏ lại để nhìn được nhiều không gian bản đồ hơn.
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Nâng cấp độ phân giải & Khử răng cưa Bilinear Filtering (`TFTStreamRenderer.kt`, `OSMTileEngine.kt`)**:
+     - *Ngói bản đồ Retina @2x*: Cập nhật URL nạp ngói Google Maps Traffic với tham số `&scale=2` và CartoDB Voyager với `@2x.png`, cung cấp ngói độ nét cao 512 × 512 điểm ảnh.
+     - *Bilinear Filtering*: Sử dụng `tilePaint` có gắn `Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG`, kích hoạt bộ lọc nội suy Bilinear mượt mà, triệt tiêu hoàn toàn hiện tượng răng cưa và vỡ hạt khi xoay bản đồ theo hướng xe.
+     - *Công nghệ Super-sampling*: Định nghĩa `enum class TFTResolution` với 3 mức độ phân giải:
+       * `FHD_960` (960 × 468, scaleFactor 2.0x - Khuyên dùng): Tăng gấp 4 lần số lượng điểm ảnh, bản đồ hiển thị siêu mịn và sắc nét.
+       * `HD_720` (720 × 351, scaleFactor 1.5x): Cân bằng độ nét và băng thông.
+       * `SD_480` (480 × 234, scaleFactor 1.0x): Độ phân giải gốc tiết kiệm dữ liệu.
+     - *Đồng bộ tỷ lệ vẽ `scaleFactor`*: Toàn bộ các thông số vẽ (Polyline, kích thước marker xe máy, chiều cao banner, cỡ chữ, nhãn bản quyền) tự động co giãn tỷ lệ thuận với `scaleFactor`.
+     - *Tăng chất lượng nén JPEG*: Nâng mức chất lượng nén ảnh từ 85% lên 90% để loại bỏ hiện tượng mờ nhòe viền chữ.
+  2. **Hiển thị chuẩn mật độ Retina trên điện thoại (`LiveNavigationScreen.kt`, `TripHistoryScreen.kt`)**:
+     - Đặt `isTilesScaledToDpi = false` cho `MapView`, giúp ngói 512px High-DPI hiển thị sắc nét ở tỷ lệ 1:1, chi tiết ngõ ngách và tên đường hiển thị sắc nét, tinh xảo.
+  3. **Thêm mục Cài đặt Màn hình chiếu TFT (`SettingsScreen.kt`, `MainViewModel.kt`)**:
+     - Thêm phân mục mới **MÀN HÌNH CHIẾU ĐỒNG HỒ XE (TFT)** trong tab Cài đặt:
+       * *Thanh trượt cỡ chữ Header*: Cho phép điều chỉnh cỡ chữ từ 14 đến 28 pt với Slider và 4 phím tắt nhanh (Nhỏ 14pt, Chuẩn 18pt, Lớn 22pt, Rất lớn 26pt).
+       * *Thẻ xem trước trực tiếp (Live Preview Card)*: Mô phỏng banner Header trên xe ("400m Rẽ trái Nguyễn Huệ") phản ánh tức thời cỡ chữ được chọn.
+       * *Lựa chọn độ phân giải*: Menu thả xuống cho phép chọn giữa Siêu nét Full HD (960×468), HD (720×351) hoặc SD (480×234).
+       * *Lưu cấu hình tự động*: Lưu vào SharedPreferences (`tft_settings_prefs`) và tự động dựng lại khung hình mới ngay khi thay đổi.

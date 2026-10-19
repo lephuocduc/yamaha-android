@@ -29,7 +29,7 @@ class OSMTileEngine private constructor(context: Context) {
         const val DEFAULT_CARTO_API_KEY = "cb1_4mz7_1_fb3f57cfec3a69a35eb8be87"
         const val defaultCartoApiKey = DEFAULT_CARTO_API_KEY
         const val GOOGLE_MAPS_TRAFFIC_URL_TEMPLATE =
-            "https://mt1.google.com/vt/lyrs=m,traffic&hl=vi&x={x}&y={y}&z={z}"
+            "https://mt1.google.com/vt/lyrs=m,traffic&hl=vi&scale=2&x={x}&y={y}&z={z}"
         const val DEFAULT_TILE_URL_TEMPLATE = GOOGLE_MAPS_TRAFFIC_URL_TEMPLATE
 
         @Volatile
@@ -47,7 +47,7 @@ class OSMTileEngine private constructor(context: Context) {
     private val httpClient: OkHttpClient
 
     var tileUrlTemplate: String = DEFAULT_TILE_URL_TEMPLATE
-    var currentStyleKey: String = "gmaps_traffic"
+    var currentStyleKey: String = "gmaps_traffic_hd"
 
     init {
         // RAM Cache: tối đa 400 ngói bitmap

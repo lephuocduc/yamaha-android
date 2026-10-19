@@ -327,7 +327,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                 MapView(ctx).apply {
                     setMultiTouchControls(true)
                     zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-                    isTilesScaledToDpi = true
+                    isTilesScaledToDpi = false
                     setTileSource(GoogleTrafficTileSource)
                     controller.setZoom(16.0)
                     val start = currentLoc ?: defaultPosition

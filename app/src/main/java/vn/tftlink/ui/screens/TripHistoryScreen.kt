@@ -451,7 +451,7 @@ fun TripDetailDialog(
                             MapView(ctx).apply {
                                 setMultiTouchControls(true)
                                 zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-                                isTilesScaledToDpi = true
+                                isTilesScaledToDpi = false
 
                                 val pointsToDraw = if (polyPoints.isNotEmpty()) {
                                     polyPoints.map { GeoPoint(it.latitude, it.longitude) }

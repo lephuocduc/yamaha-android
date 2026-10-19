@@ -42,6 +42,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +52,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import vn.tftlink.service.renderer.TFTResolution
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -90,8 +93,11 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val updateStatus by viewModel.updateStatus.collectAsState()
     val clusterMapSource by viewModel.clusterMapSource.collectAsState()
     val diagnosticLogs by viewModel.diagnosticLogs.collectAsState()
+    val tftResolution by viewModel.tftResolution.collectAsState()
+    val headerFontSize by viewModel.headerFontSize.collectAsState()
 
     var mapSourceMenuExpanded by remember { mutableStateOf(false) }
+    var resMenuExpanded by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showLogDialog by remember { mutableStateOf(false) }
 
@@ -315,6 +321,211 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         Text("✓ Thuật toán Valhalla Engine định tuyến xe máy chuẩn Việt Nam", color = NeonGreen, fontSize = 11.sp)
                         Text("✓ Tốc độ nạp ngói cực nhanh qua mạng lưới CDN toàn cầu", color = TextMuted, fontSize = 11.sp)
                     }
+                }
+            }
+        }
+
+        // Section: Màn hình chiếu đồng hồ xe (TFT Projection)
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
+                border = BorderStroke(1.dp, DarkSurfaceBorder)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "MÀN HÌNH CHIẾU ĐỒNG HỒ XE (TFT)",
+                            color = YamahaCyan,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Icon(
+                            imageVector = Icons.Default.Speed,
+                            contentDescription = null,
+                            tint = YamahaCyan,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 1. CỠ CHỮ HEADER CHỈ DẪN
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Cỡ chữ Header dẫn đường",
+                            color = TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${headerFontSize.toInt()} pt",
+                            color = YamahaCyan,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        text = "Thanh chỉ dẫn Turn-by-Turn trên cùng (Cự ly rẽ + Tên đường)",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 4 nút preset nhanh: 14pt, 18pt (chuẩn), 22pt, 26pt
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            14f to "Nhỏ (14)",
+                            18f to "Chuẩn (18)",
+                            22f to "Lớn (22)",
+                            26f to "Rất lớn (26)"
+                        ).forEach { (size, label) ->
+                            val isSelected = kotlin.math.abs(headerFontSize - size) < 1f
+                            OutlinedButton(
+                                onClick = { viewModel.setHeaderFontSize(size) },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (isSelected) YamahaCyan.copy(alpha = 0.2f) else Color.Transparent
+                                ),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) YamahaCyan else DarkSurfaceBorder
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) YamahaCyan else TextSecondary,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Slider tùy chỉnh mượt mà từ 14 đến 28 pt
+                    Slider(
+                        value = headerFontSize,
+                        onValueChange = { viewModel.setHeaderFontSize(it) },
+                        valueRange = 14f..28f,
+                        steps = 13,
+                        colors = SliderDefaults.colors(
+                            thumbColor = YamahaCyan,
+                            activeTrackColor = YamahaCyan,
+                            inactiveTrackColor = DarkSurfaceBorder
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // THẺ XEM TRƯỚC TRỰC TIẾP (LIVE PREVIEW BANNER)
+                    Text(
+                        text = "Xem trước giao diện Header trên xe:",
+                        color = TextMuted,
+                        fontSize = 10.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF0A0F17))
+                            .border(1.dp, YamahaCyan.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 10.dp, vertical = (headerFontSize * 0.35f).dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "400m Rẽ trái ",
+                                color = NeonGreen,
+                                fontSize = headerFontSize.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Nguyễn Huệ",
+                                color = Color.White,
+                                fontSize = headerFontSize.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 2. ĐỘ PHÂN GIẢI BẢN ĐỒ CHIẾU LÊN XE
+                    Text(
+                        text = "Độ phân giải bản đồ chiếu lên xe",
+                        color = TextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Mật độ điểm ảnh dựng hình (Canvas Super-sampling)",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = tftResolution.title,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Độ phân giải bản đồ") },
+                            trailingIcon = {
+                                IconButton(onClick = { resMenuExpanded = !resMenuExpanded }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().clickable { resMenuExpanded = true }
+                        )
+                        DropdownMenu(
+                            expanded = resMenuExpanded,
+                            onDismissRequest = { resMenuExpanded = false }
+                        ) {
+                            TFTResolution.values().forEach { res ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(res.title, color = if (res == tftResolution) YamahaCyan else TextPrimary, fontWeight = FontWeight.Bold)
+                                            Text(res.description, color = TextMuted, fontSize = 11.sp)
+                                        }
+                                    },
+                                    onClick = {
+                                        viewModel.setTFTResolution(res)
+                                        resMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "💡 Gợi ý: Chế độ Siêu nét Full HD (960×468) kết hợp cùng ngói bản đồ Retina @2x giúp các chi tiết ngõ ngách, tên đường hiển thị sắc mịn tuyệt đối cả trên điện thoại lẫn đồng hồ TFT.",
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
                 }
             }
         }
