@@ -447,13 +447,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         navEngine.selectRoute(route)
     }
 
+    fun setNorthUp(northUp: Boolean) {
+        _isNorthUp.value = northUp
+        streamRenderer.isNorthUp = northUp
+    }
+
     fun startNavigation() {
+        setNorthUp(false) // Bắt đầu dẫn đường: chuyển góc nhìn theo hướng xe (Head Tracking)
         navEngine.startActiveNavigation()
         val loc = navEngine.currentLocation.value ?: navEngine.getEffectiveLocation()
         tripManager.startTripSession(loc, connectedBike.value?.name ?: "Yamaha NMAX")
     }
 
     fun stopNavigation() {
+        setNorthUp(true) // Thoát dẫn đường: trả về hướng Bắc cố định (North-up)
         navEngine.stopNavigation()
         ccuManager.stopNavigationOnTFT()
         val loc = navEngine.currentLocation.value ?: navEngine.getEffectiveLocation()
@@ -461,9 +468,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleNorthUp() {
-        val next = !_isNorthUp.value
-        _isNorthUp.value = next
-        streamRenderer.isNorthUp = next
+        setNorthUp(!_isNorthUp.value)
     }
 
     fun startNavigationTo(destination: LatLng, title: String = "Điểm đến") {

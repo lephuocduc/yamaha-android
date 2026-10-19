@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -55,7 +58,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
-import vn.tftlink.service.renderer.TFTResolution
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -96,11 +98,9 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val updateStatus by viewModel.updateStatus.collectAsState()
     val clusterMapSource by viewModel.clusterMapSource.collectAsState()
     val diagnosticLogs by viewModel.diagnosticLogs.collectAsState()
-    val tftResolution by viewModel.tftResolution.collectAsState()
     val headerFontSize by viewModel.headerFontSize.collectAsState()
 
     var mapSourceMenuExpanded by remember { mutableStateOf(false) }
-    var resMenuExpanded by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showLogDialog by remember { mutableStateOf(false) }
 
@@ -228,7 +228,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 border = BorderStroke(1.dp, DarkSurfaceBorder)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Text("BẢN ĐỒ & THUẬT TOÁN DẪN ĐƯỜNG", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("BẢN ĐỒ XE", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // Lựa chọn nguồn bản đồ truyền lên cụm đồng hồ
@@ -305,24 +305,14 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         Spacer(modifier = Modifier.height(10.dp))
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Tầng thuật toán", color = TextSecondary, fontSize = 13.sp)
-                        Text("Valhalla Engine (Motorcycle)", color = NeonGreen, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
                     if (clusterMapSource == ClusterMapSource.GOOGLE_MAPS_TRAFFIC) {
                         Text("✓ Google Maps: Mật độ giao thông thời gian thực (Xanh lá / Vàng / Đỏ kẹt xe)", color = NeonGreen, fontSize = 11.sp)
                         Text("✓ Góc nhìn 3D nghiêng 45° xoay theo hướng xe chạy, HUD chỉ dẫn rẽ và tốc độ", color = NeonGreen, fontSize = 11.sp)
-                        Text("✓ Hỗ trợ bấm 'Chia sẻ' từ ứng dụng Google Maps trực tiếp sang NConnect", color = YamahaCyan, fontSize = 11.sp)
+                        Text("✓ Hỗ trợ bấm 'Chia sẻ' từ ứng dụng Google Maps trực tiếp sang app", color = YamahaCyan, fontSize = 11.sp)
                     } else {
                         Text("✓ Bản đồ ngói CartoDB Voyager sạch bóng, không watermark", color = NeonGreen, fontSize = 11.sp)
-                        Text("✓ Thuật toán Valhalla Engine định tuyến xe máy chuẩn Việt Nam", color = NeonGreen, fontSize = 11.sp)
-                        Text("✓ Tốc độ nạp ngói cực nhanh qua mạng lưới CDN toàn cầu", color = TextMuted, fontSize = 11.sp)
+                        Text("✓ Tối ưu định tuyến xe máy chuẩn đường bộ Việt Nam", color = NeonGreen, fontSize = 11.sp)
+                        Text("✓ Tốc độ nạp ngói nhanh qua mạng lưới CDN toàn cầu", color = TextMuted, fontSize = 11.sp)
                     }
                 }
             }
@@ -470,65 +460,36 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // 2. ĐỘ PHÂN GIẢI BẢN ĐỒ CHIẾU LÊN XE
-                    Text(
-                        text = "Độ phân giải bản đồ chiếu lên xe",
-                        color = TextPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Mật độ điểm ảnh dựng hình (Canvas Super-sampling)",
-                        color = TextSecondary,
-                        fontSize = 11.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedTextField(
-                            value = tftResolution.title,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Độ phân giải bản đồ") },
-                            trailingIcon = {
-                                IconButton(onClick = { resMenuExpanded = !resMenuExpanded }) {
-                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth().clickable { resMenuExpanded = true }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(DarkBackground, RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = NeonGreen,
+                            modifier = Modifier.size(18.dp)
                         )
-                        DropdownMenu(
-                            expanded = resMenuExpanded,
-                            onDismissRequest = { resMenuExpanded = false }
-                        ) {
-                            TFTResolution.values().forEach { res ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(res.title, color = if (res == tftResolution) YamahaCyan else TextPrimary, fontWeight = FontWeight.Bold)
-                                            Text(res.description, color = TextMuted, fontSize = 11.sp)
-                                        }
-                                    },
-                                    onClick = {
-                                        viewModel.setTFTResolution(res)
-                                        resMenuExpanded = false
-                                    }
-                                )
-                            }
+                        Column {
+                            Text(
+                                text = "Độ phân giải: Siêu nét Full HD (960 × 468)",
+                                color = NeonGreen,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Tự động kích hoạt mật độ điểm ảnh tối đa kết hợp ngói bản đồ Retina @2x",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(
-                        text = "💡 Gợi ý: Chế độ Siêu nét Full HD (960×468) kết hợp cùng ngói bản đồ Retina @2x giúp các chi tiết ngõ ngách, tên đường hiển thị sắc mịn tuyệt đối cả trên điện thoại lẫn đồng hồ TFT.",
-                        color = TextSecondary,
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp
-                    )
                 }
             }
         }
@@ -716,12 +677,29 @@ fun SettingsScreen(viewModel: MainViewModel) {
                                     fontWeight = FontWeight.Bold
                                 )
 
-                                Text(
-                                    text = info.releaseNotes,
-                                    color = TextPrimary,
-                                    fontSize = 12.sp,
-                                    lineHeight = 16.sp
-                                )
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 160.dp)
+                                        .verticalScroll(rememberScrollState()),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    formatReleaseNotesList(info.releaseNotes).forEach { item ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.Top
+                                        ) {
+                                            Text("•", color = YamahaCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = item,
+                                                color = TextPrimary,
+                                                fontSize = 12.sp,
+                                                lineHeight = 16.sp
+                                            )
+                                        }
+                                    }
+                                }
                             }
 
                             Row(
@@ -1038,19 +1016,40 @@ fun SettingsScreen(viewModel: MainViewModel) {
             }
         }
 
-        // Section: Thông tin ứng dụng
+        // Section: Thông tin ứng dụng & Tác giả
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
                 border = BorderStroke(1.dp, DarkSurfaceBorder)
             ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("THÔNG TIN PHẦN MỀM", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text("NConnect Android (Yamaha CCU Companion)", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Text("Phiên bản: ${viewModel.getCurrentVersionName()} (Build ${viewModel.getCurrentVersionCode()})", color = TextSecondary, fontSize = 12.sp)
-                    Text("Package: vn.tftlink", color = TextMuted, fontSize = 11.sp)
-                    Text("Kiến trúc: 100% Kotlin • Jetpack Compose • Material 3 • Coroutines/StateFlow • Room DB", color = TextMuted, fontSize = 11.sp)
+                    Text("MyNMAX v${viewModel.getCurrentVersionName()} (Build ${viewModel.getCurrentVersionCode()})", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(DarkBackground)
+                            .clickable {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.facebook.com/lephuocduc20")).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(intent)
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Author", color = TextSecondary, fontSize = 11.sp)
+                            Text("Lê Phước Đức", color = YamahaCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Text("facebook.com/lephuocduc20 ↗", color = NeonGreen, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
                 }
             }
         }
@@ -1082,10 +1081,34 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = info.releaseNotes,
-                        color = TextPrimary,
-                        fontSize = 13.sp
+                        text = "Nội dung cập nhật:",
+                        color = YamahaCyan,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
                     )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 260.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        formatReleaseNotesList(info.releaseNotes).forEach { item ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Text("•", color = YamahaCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = item,
+                                    color = TextPrimary,
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp
+                                )
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -1180,4 +1203,18 @@ fun SettingsScreen(viewModel: MainViewModel) {
             }
         )
     }
+}
+
+/**
+ * Tách nội dung cập nhật phần mềm thành từng dòng mục riêng biệt (theo số thứ tự 1), 2) hoặc dấu chấm phẩy / xuống dòng)
+ */
+private fun formatReleaseNotesList(raw: String): List<String> {
+    if (raw.isBlank()) return emptyList()
+    val splitter = Regex("\\s*;\\s*|\\s+(?=\\d+[\\)\\.]\\s)")
+    val numberPrefix = Regex("^\\d+[\\)\\.]\\s*")
+    val result = raw.lines()
+        .flatMap { it.split(splitter) }
+        .map { it.trim().replace(numberPrefix, "").trim() }
+        .filter { it.isNotEmpty() }
+    return result.ifEmpty { listOf(raw.trim()) }
 }

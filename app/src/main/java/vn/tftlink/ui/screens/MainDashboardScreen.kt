@@ -155,12 +155,6 @@ fun MainDashboardScreen(
                         fontSize = 26.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = "NConnect Companion & TFT Stream",
-                        color = YamahaCyan,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
                 }
 
                 IconButton(

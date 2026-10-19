@@ -1079,3 +1079,16 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
        * **"Ghép đôi" (Cyan Outline)**: Mở trực tiếp Cài đặt Bluetooth máy (`Settings.ACTION_BLUETOOTH_SETTINGS`) đồng thời tạm dừng quét BLE, hướng dẫn người lái chọn tên xe và xác nhận mã PIN trên xe và điện thoại.
        * **"Kết nối BLE" (Neon Green)**: Kết nối ngay lập tức qua BLE GATT để đọc dữ liệu vận hành xe (Ắc quy, vòng tua, nhiệt độ) mà không cần chờ ghép đôi màn hình dẫn đường.
      - Nâng cấp hộp thoại Hướng dẫn ghép đôi (`showPairingGuideDialog`): Giải thích cặn kẽ 3 bước chuẩn hóa và tích hợp nút "Mở Cài đặt Bluetooth máy" thao tác 1-chạm.
+
+---
+
+### 📌 Quy tắc 27: Tinh chỉnh UX Bản đồ, Cài đặt & Tự động chuyển góc nhìn khi dẫn đường (v0.5.49 - Build 79)
+- **Thay đổi**:
+  1. **TFT luôn Siêu nét Full HD**: `TFTStreamRenderer._tftResolution` cố định `TFTResolution.FHD_960`, bỏ đọc SharedPreferences; xóa dropdown chọn độ phân giải trong `SettingsScreen.kt`, thay bằng badge thông tin.
+  2. **Release notes dạng danh sách**: Hàm `formatReleaseNotesList()` tách theo xuống dòng, dấu `;` hoặc tiền tố `1)`/`2.`; hiển thị từng mục có bullet trong `Column(heightIn(max) + verticalScroll)` ở cả thẻ cập nhật và AlertDialog.
+  3. **Nút chọn tuyến không vỡ layout**: Dùng chung 1 loại `OutlinedButton` cho cả tuyến đang chọn/không chọn, chiều cao cố định 40dp, `contentPadding` nhỏ, `maxLines = 1` + `TextOverflow.Ellipsis`. Không đổi kiểu composable (Button ↔ OutlinedButton) khi chọn vì padding/min-size khác nhau gây nhảy layout.
+  4. **Polyline viền đen**: Vẽ 2 lớp `OsmPolyline` (casing đen 22f bên dưới + Cyan 14f bên trên, `Cap.ROUND`/`Join.ROUND`); tuyến phụ casing 16f + xám 10f.
+  5. **Ẩn bàn phím**: `LocalSoftwareKeyboardController.hide()` + `LocalFocusManager.clearFocus()` khi chọn kết quả, Về nhà/Đi làm, nút xóa, IME Search, chạm/nhấn giữ bản đồ.
+  6. **Tự chuyển góc nhìn**: `MainViewModel.setNorthUp()`; `startNavigation()` → Head Tracking, `stopNavigation()` → North-Up. Trong `LiveNavigationScreen`, `LaunchedEffect(isNavigating)` chỉ phản ứng khi THỰC SỰ chuyển trạng thái (so với `wasNavigating`) để không reset lựa chọn thủ công khi quay lại tab; khi thoát gọi `setZoom(15.0)`.
+  7. **Camera bám xe ngoài dẫn đường không ép zoom**: `animateTo(point, null, 500L)` khi không dẫn đường — nếu ép 16.5 như trước, lần cập nhật GPS kế tiếp sẽ ghi đè mức zoom rộng 15.0 vừa đặt khi thoát.
+  8. **Cài đặt gọn**: Bỏ mọi chữ "thuật toán / Valhalla"; mục đổi tên "BẢN ĐỒ XE"; Thông tin phần mềm chỉ còn "MyNMAX vX (Build N)" + dòng Author mở `https://www.facebook.com/lephuocduc20`. Trang chủ bỏ phụ đề "NConnect Companion & TFT Stream".

@@ -17,8 +17,8 @@ android {
         applicationId = "vn.tftlink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 78
-        versionName = "0.5.48"
+        versionCode = 79
+        versionName = "0.5.49"
 
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
 

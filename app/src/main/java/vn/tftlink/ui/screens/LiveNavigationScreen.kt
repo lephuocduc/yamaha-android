@@ -91,6 +91,8 @@ import android.content.Context
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.gms.maps.model.LatLng
@@ -206,20 +208,44 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
     var favoriteAddressToSave by remember { mutableStateOf("") }
 
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
     val defaultPosition = LatLng(10.7769, 106.7009)
     var osmdroidMapView by remember { mutableStateOf<MapView?>(null) }
 
+    // Tự động chuyển chế độ khi bắt đầu hoặc dừng dẫn đường:
+    // - Bắt đầu dẫn đường: Tự động bám theo xe và chuyển góc nhìn Head Tracking
+    // - Thoát dẫn đường: Trả về góc nhìn North-Up và zoom rộng ra (zoom = 15.0)
+    var wasNavigating by remember { mutableStateOf(isNavigating) }
+    LaunchedEffect(isNavigating) {
+        if (isNavigating == wasNavigating) return@LaunchedEffect
+        wasNavigating = isNavigating
+        if (isNavigating) {
+            isFollowingLocation = true
+            viewModel.setNorthUp(false)
+        } else {
+            viewModel.setNorthUp(true)
+            osmdroidMapView?.controller?.setZoom(15.0)
+        }
+    }
+
     val currentOnMapTapped by rememberUpdatedState {
         isSearchFocused = false
+        keyboardController?.hide()
+        focusManager.clearFocus()
         droppedPin = null
         if (activeRoute != null && !isNavigating) {
             viewModel.stopNavigation()
+            viewModel.setNorthUp(true)
+            osmdroidMapView?.controller?.setZoom(15.0)
         }
     }
 
     val currentOnMapLongPressed by rememberUpdatedState { p: GeoPoint ->
         isSearchFocused = false
+        keyboardController?.hide()
+        focusManager.clearFocus()
         val latLng = LatLng(p.latitude, p.longitude)
         droppedPin = latLng
         droppedPinTitle = "Đang lấy địa chỉ..."
@@ -270,9 +296,11 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
     LaunchedEffect(currentLoc, isFollowingLocation, isNavigating) {
         val loc = currentLoc ?: return@LaunchedEffect
         if (isFollowingLocation) {
+            // Khi dẫn đường: zoom cận cảnh 17.5. Ngoài dẫn đường: giữ nguyên mức zoom hiện tại (không ép zoom lại sau khi thoát)
+            val targetZoom: Double? = if (isNavigating) 17.5 else null
             osmdroidMapView?.controller?.animateTo(
                 GeoPoint(loc.latitude, loc.longitude),
-                if (isNavigating) 17.5 else 16.5,
+                targetZoom,
                 500L
             )
         }
@@ -371,13 +399,26 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     mapView.overlays.removeAt(mapView.overlays.size - 1)
                 }
 
-                // Draw Alternative Routes in Dark / Gray Polyline
+                // Draw Alternative Routes with Dark Casing Border
                 alternativeRoutes.forEach { altRoute ->
                     if (altRoute.coordinates.isNotEmpty()) {
+                        val points = altRoute.coordinates.map { GeoPoint(it.latitude, it.longitude) }
+                        // Viền đen ngoài cho tuyến phụ
+                        val altCasing = OsmPolyline().apply {
+                            outlinePaint.color = android.graphics.Color.argb(220, 15, 23, 42)
+                            outlinePaint.strokeWidth = 16f
+                            outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
+                            setPoints(points)
+                        }
+                        mapView.overlays.add(altCasing)
+
                         val poly = OsmPolyline().apply {
                             outlinePaint.color = android.graphics.Color.parseColor("#64748B")
-                            outlinePaint.strokeWidth = 12f
-                            setPoints(altRoute.coordinates.map { GeoPoint(it.latitude, it.longitude) })
+                            outlinePaint.strokeWidth = 10f
+                            outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
+                            setPoints(points)
                             setOnClickListener { _, _, _ ->
                                 viewModel.selectRoute(altRoute)
                                 true
@@ -387,13 +428,27 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     }
                 }
 
-                // Draw Active Route in Yamaha Cyan / Neon Green Polyline
+                // Draw Active Route with Bold Black Casing Border & Yamaha Cyan Center
                 activeRoute?.let { route ->
                     if (route.coordinates.isNotEmpty()) {
+                        val points = route.coordinates.map { GeoPoint(it.latitude, it.longitude) }
+                        // Viền đen dày tương phản cao (Black Outline Casing)
+                        val casing = OsmPolyline().apply {
+                            outlinePaint.color = android.graphics.Color.BLACK
+                            outlinePaint.strokeWidth = 22f
+                            outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
+                            setPoints(points)
+                        }
+                        mapView.overlays.add(casing)
+
+                        // Lộ trình chính màu Cyan Yamaha sắc nét
                         val poly = OsmPolyline().apply {
                             outlinePaint.color = android.graphics.Color.parseColor("#00E5FF")
-                            outlinePaint.strokeWidth = 16f
-                            setPoints(route.coordinates.map { GeoPoint(it.latitude, it.longitude) })
+                            outlinePaint.strokeWidth = 14f
+                            outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
+                            setPoints(points)
                         }
                         mapView.overlays.add(poly)
 
@@ -636,6 +691,8 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                                 keyboardActions = KeyboardActions(
                                     onSearch = {
+                                        keyboardController?.hide()
+                                        focusManager.clearFocus()
                                         if (searchQuery.isNotBlank()) {
                                             viewModel.searchPlaces(searchQuery)
                                         }
@@ -656,6 +713,8 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                             if (searchQuery.isNotEmpty()) {
                                 IconButton(
                                     onClick = {
+                                        keyboardController?.hide()
+                                        focusManager.clearFocus()
                                         searchQuery = ""
                                         viewModel.searchPlaces("")
                                     },
@@ -683,6 +742,8 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                     homePlace?.let { home ->
                                         Button(
                                             onClick = {
+                                                keyboardController?.hide()
+                                                focusManager.clearFocus()
                                                 viewModel.calculateRoute(home.coordinate, home.name, autoStart = false)
                                                 isSearchFocused = false
                                                 searchQuery = ""
@@ -701,6 +762,8 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                      workPlace?.let { work ->
                                         Button(
                                             onClick = {
+                                                keyboardController?.hide()
+                                                focusManager.clearFocus()
                                                 viewModel.calculateRoute(work.coordinate, work.name, autoStart = false)
                                                 isSearchFocused = false
                                                 searchQuery = ""
@@ -740,6 +803,8 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                                 .fillMaxWidth()
                                                 .padding(vertical = 3.dp)
                                                 .clickable {
+                                                    keyboardController?.hide()
+                                                    focusManager.clearFocus()
                                                     viewModel.calculateRoute(place.coordinate, place.name, autoStart = false)
                                                     isSearchFocused = false
                                                     searchQuery = ""
@@ -984,12 +1049,16 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
-                        IconButton(onClick = { viewModel.stopNavigation() }) {
+                        IconButton(onClick = {
+                            viewModel.stopNavigation()
+                            viewModel.setNorthUp(true)
+                            osmdroidMapView?.controller?.setZoom(15.0)
+                        }) {
                             Icon(Icons.Default.Close, contentDescription = null, tint = TextSecondary)
                         }
                     }
 
-                    // Alternatives row - Giữ cố định vị trí Tuyến 1, Tuyến 2 (không bị đảo chỗ khi chạm chọn)
+                    // Alternatives row - Giữ cố định kích thước và vị trí các tuyến (không nhảy layout khi bấm chọn)
                     if (allCalculatedRoutes.size > 1) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -997,41 +1066,46 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                         ) {
                             allCalculatedRoutes.forEachIndexed { index, r ->
                                 val isSelected = (r.id == route.id)
-                                if (isSelected) {
-                                    Button(
-                                        onClick = { viewModel.selectRoute(r) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan.copy(alpha = 0.25f)),
-                                        border = BorderStroke(1.5.dp, YamahaCyan),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(
-                                            text = "Tuyến ${index + 1}: ${r.formattedDuration}",
-                                            color = YamahaCyan,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
+                                val label = if (isSelected) {
+                                    "Tuyến ${index + 1}: ${r.formattedDuration}"
                                 } else {
-                                    OutlinedButton(
-                                        onClick = { viewModel.selectRoute(r) },
-                                        border = BorderStroke(1.dp, DarkSurfaceBorder),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(
-                                            text = "Tuyến ${index + 1}: ${r.timeDiffString.ifEmpty { r.formattedDuration }}",
-                                            color = TextSecondary,
-                                            fontSize = 12.sp
-                                        )
-                                    }
+                                    val diff = r.timeDiffString.ifEmpty { r.formattedDuration }
+                                    "Tuyến ${index + 1}: $diff"
+                                }
+                                OutlinedButton(
+                                    onClick = { viewModel.selectRoute(r) },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(40.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = if (isSelected) YamahaCyan.copy(alpha = 0.2f) else DarkSurfaceHighlight
+                                    ),
+                                    border = BorderStroke(
+                                        if (isSelected) 1.5.dp else 1.dp,
+                                        if (isSelected) YamahaCyan else DarkSurfaceBorder
+                                    ),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (isSelected) YamahaCyan else TextSecondary,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
                         }
                     }
 
                     Button(
-                        onClick = { viewModel.startNavigation() },
+                        onClick = {
+                            isFollowingLocation = true
+                            viewModel.setNorthUp(false) // Head tracking
+                            viewModel.startNavigation()
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = NeonGreen),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)

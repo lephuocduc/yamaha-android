@@ -85,14 +85,8 @@ class TFTStreamRenderer(
 
     private val prefs = context.getSharedPreferences("tft_settings_prefs", Context.MODE_PRIVATE)
 
-    private val _tftResolution = MutableStateFlow(
-        try {
-            val savedId = prefs.getString("tft_resolution", TFTResolution.FHD_960.id)
-            TFTResolution.values().firstOrNull { it.id == savedId } ?: TFTResolution.FHD_960
-        } catch (_: Exception) {
-            TFTResolution.FHD_960
-        }
-    )
+    // Màn hình bản đồ luôn cố định chế độ Siêu nét Full HD (960 × 468) với Canvas Super-sampling
+    private val _tftResolution = MutableStateFlow(TFTResolution.FHD_960)
     val tftResolution: StateFlow<TFTResolution> = _tftResolution.asStateFlow()
 
     private val _headerFontSize = MutableStateFlow(

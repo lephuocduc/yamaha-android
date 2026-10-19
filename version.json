@@ -1,6 +1,6 @@
 {
-  "versionCode": 78,
-  "versionName": "0.5.48",
-  "releaseNotes": "1) Khắc phục triệt để lỗi treo kết nối và đồng hồ xe load mãi không hiện Approve: Tách biệt hoàn toàn tầng BLE GATT (đọc thông số xe) và tầng Classic BR/EDR (Garmin StreetCross dẫn đường); 2) Loại bỏ lệnh createBond gây kẹt mã hóa BLE SMP trên địa chỉ ngẫu nhiên RPA; 3) Hỗ trợ tự động nhận diện thiết bị ghép đôi Classic và kích hoạt SPP RFCOMM ngay sau khi xác thực CCU; 4) Bổ sung nút 'Ghép đôi' mở trực tiếp Cài đặt Bluetooth máy kèm cơ chế tạm dừng quét BLE để tránh xung đột nghẽn sóng 2.4GHz trong quá trình nhập mã PIN.",
+  "versionCode": 79,
+  "versionName": "0.5.49",
+  "releaseNotes": "1) Bản đồ chiếu lên xe luôn ở chế độ Siêu nét Full HD, bỏ tùy chọn độ phân giải; 2) Nội dung cập nhật phần mềm hiển thị từng mục, có thể cuộn khi dài; 3) Sửa lỗi vỡ layout khi chọn các tuyến đường thay thế; 4) Lộ trình trên bản đồ có viền đen giúp dễ nhìn hơn; 5) Tự ẩn bàn phím khi chọn địa chỉ tìm kiếm; 6) Bắt đầu dẫn đường tự bám theo xe và xoay theo hướng xe (Head Tracking), thoát dẫn đường tự zoom rộng và trở về North-Up; 7) Rút gọn thông tin phần mềm, thêm thông tin tác giả trong Cài đặt.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }
