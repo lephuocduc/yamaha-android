@@ -1051,3 +1051,31 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
        * *Thẻ xem trước trực tiếp (Live Preview Card)*: Mô phỏng banner Header trên xe ("400m Rẽ trái Nguyễn Huệ") phản ánh tức thời cỡ chữ được chọn.
        * *Lựa chọn độ phân giải*: Menu thả xuống cho phép chọn giữa Siêu nét Full HD (960×468), HD (720×351) hoặc SD (480×234).
        * *Lưu cấu hình tự động*: Lưu vào SharedPreferences (`tft_settings_prefs`) và tự động dựng lại khung hình mới ngay khi thay đổi.
+
+---
+
+### 📌 Quy tắc 26: Tách biệt Dual-Mode BLE Telemetry và Classic BR/EDR SPP của Yamaha CCU & Sửa triệt để lỗi Treo Ghép đôi (v0.5.48 - Build 78)
+- **Vấn đề đã gặp**:
+  1. **Bấm "Kết nối" trong app thì app quay tròn, đồng hồ xe quay tròn mãi không hiện thông báo Approve / PIN (Treo kết nối)**:
+     - *Hiện tượng*: Khi bật chìa khóa xe, app phát hiện xe `YCCU_0006030100D74D (62:EB:82:62:80:79)` với trạng thái `Đã ghép đôi: false`. Người dùng bấm "Kết nối" thì app hiện thanh quay "Đang kết nối...", đồng hồ xe cũng hiện biểu tượng kết nối xoay tròn mãi nhưng không hề có hộp thoại Approve hay mã PIN nào xuất hiện. Sau 34 giây, app báo `Ghép đôi Bluetooth thất bại hoặc bị hủy` và các lần bấm sau đều thất bại ngay lập tức trong 1 giây.
+     - *Nguyên nhân gốc rễ*:
+       + Thiết bị Yamaha CCU (màn hình Garmin StreetCross) là thiết bị Bluetooth Dual-Mode (BLE + Classic BR/EDR).
+       + Khi quét bằng `BluetoothLeScanner`, địa chỉ thu được là địa chỉ ngẫu nhiên riêng tư BLE (Resolvable Private Address - RPA, ví dụ `62:EB:82:62:80:79`).
+       + Trong mã nguồn Build 77, khi `bluetoothDevice.bondState == BOND_NONE`, hàm `connect()` gọi `bluetoothDevice.createBond()` trên địa chỉ BLE RPA này rồi dừng lại (`return`).
+       + Thao tác này kích hoạt tiến trình ghép đôi **BLE SMP (Security Manager Protocol)** qua giao thức L2CAP. Tuy nhiên, firmware của Yamaha CCU **HOÀN TOÀN KHÔNG** hỗ trợ ghép đôi so khớp số qua BLE SMP; CCU chỉ hỗ trợ Secure Simple Pairing (SSP) qua sóng **Bluetooth Classic (BR/EDR)**.
+       + Hậu quả: CCU trên xe bỏ qua gói tin SMP, đồng hồ xe và điện thoại rơi vào trạng thái chờ vô tận cho đến khi bộ đếm 30s của Android Bluetooth stack hết hạn và tự ngắt kết nối.
+       + Việc `createBond()` bị gọi trước `connectGatt` đã chặn đứng hoàn toàn việc kết nối tầng BLE GATT và không cho phép đọc Telemetry.
+  2. **Nghẽn băng tần 2.4 GHz do quét BLE Low Latency làm rớt gói SSP khi ghép đôi trong Cài đặt máy**:
+     - Khi người dùng vào Cài đặt Bluetooth máy để ghép đôi, chế độ quét `SCAN_MODE_LOW_LATENCY` của app chiếm dụng 100% duty cycle của chip Bluetooth điện thoại (Qualcomm WCN3990 trên Android 9), khiến các gói tin bắt tay Classic Inquiry/Page scan và mã xác nhận SSP bị rớt, dẫn đến lỗi "Waiting for approval" rồi "Pairing Failed" trên xe.
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Tách biệt kiến trúc Dual-Mode trong `YamahaCCUManager.kt`**:
+     - *Không bao giờ gọi `createBond()` trên địa chỉ BLE RPA*: Loại bỏ hoàn toàn khối lệnh `createBond()` trong `connect()`. Thiết bị BLE GATT trên Yamaha CCU cho phép kết nối tự do không cần mã hóa tầng OS để đọc các thông số Telemetry (Điện áp ắc quy, Vòng tua RPM, Nhiệt độ nước làm mát, Nhiên liệu).
+     - *Hàm ánh xạ thiết bị Dual-Mode `findMatchingClassicBondedDevice(name, bleAddress)`*: Tự động so khớp thiết bị BLE phát hiện được với danh sách `bondedDevices` của hệ điều hành theo tên (ví dụ `YCCU_0006030100D74D`) hoặc địa chỉ. Nhận diện chính xác địa chỉ Classic BR/EDR thực tế của xe.
+     - *Kích hoạt kênh SPP RFCOMM đúng thời điểm*: Kênh SPP RFCOMM (Garmin StreetCross wire streaming) chỉ được mở tới thiết bị Classic BR/EDR đã ghép đôi SAU KHI BLE GATT đã kết nối và hoàn tất xác thực `AuthenticationV2`. Bổ sung cơ chế fallback socket reflection (`createInsecureRfcommSocketToServiceRecord` và `createRfcommSocket(1)`).
+     - *Chuyển đổi sang `SCAN_MODE_BALANCED`*: Hạ mức quét BLE từ `LOW_LATENCY` (100% duty cycle) xuống `BALANCED` (~25-30% duty cycle), nhường băng tần cho các tác vụ bắt tay Classic Bluetooth.
+     - *Tự động dừng quét khi phát hiện `BOND_BONDING`*: Ngay khi hệ thống phát hiện có tiến trình ghép đôi Bluetooth đang diễn ra, app lập tức dừng quét BLE (`stopScanning()`) để giải phóng 100% tài nguyên cho việc nhập mã PIN.
+  2. **Cung cấp nút "Ghép đôi" chuyên biệt & Điều hướng Cài đặt Bluetooth máy (`MainViewModel.kt`, `MainDashboardScreen.kt`)**:
+     - Khi xe chưa được ghép đôi Classic: Hộp thoại quét xe cung cấp 2 nút bấm rõ ràng:
+       * **"Ghép đôi" (Cyan Outline)**: Mở trực tiếp Cài đặt Bluetooth máy (`Settings.ACTION_BLUETOOTH_SETTINGS`) đồng thời tạm dừng quét BLE, hướng dẫn người lái chọn tên xe và xác nhận mã PIN trên xe và điện thoại.
+       * **"Kết nối BLE" (Neon Green)**: Kết nối ngay lập tức qua BLE GATT để đọc dữ liệu vận hành xe (Ắc quy, vòng tua, nhiệt độ) mà không cần chờ ghép đôi màn hình dẫn đường.
+     - Nâng cấp hộp thoại Hướng dẫn ghép đôi (`showPairingGuideDialog`): Giải thích cặn kẽ 3 bước chuẩn hóa và tích hợp nút "Mở Cài đặt Bluetooth máy" thao tác 1-chạm.

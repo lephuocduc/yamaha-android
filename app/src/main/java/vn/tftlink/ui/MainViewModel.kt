@@ -39,6 +39,7 @@ import vn.tftlink.service.update.UpdateStatus
 import android.bluetooth.BluetoothDevice
 import android.content.Intent
 import android.location.LocationManager
+import android.provider.Settings
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -267,21 +268,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun stopScanning() = stopScan()
 
     fun connectBike(device: BikeDevice) {
-        val bluetoothDevice = ccuManager.getBluetoothDevice(device.address)
-        if (bluetoothDevice != null && bluetoothDevice.bondState == BluetoothDevice.BOND_NONE) {
-            Toast.makeText(
-                getApplication(),
-                "Đang gửi yêu cầu ghép đôi tới ${device.name}. Vui lòng bấm Đồng ý trên điện thoại và xe!",
-                Toast.LENGTH_LONG
-            ).show()
-        } else {
+        if (device.isPaired) {
             Toast.makeText(
                 getApplication(),
                 "Đang kết nối tới ${device.name}...",
                 Toast.LENGTH_SHORT
             ).show()
+        } else {
+            Toast.makeText(
+                getApplication(),
+                "Đang kết nối BLE với ${device.name} để đọc dữ liệu xe...",
+                Toast.LENGTH_SHORT
+            ).show()
         }
         ccuManager.connect(device)
+    }
+
+    fun openBluetoothSettings(context: Context) {
+        stopScanning() // Dừng quét BLE ngay để giải phóng băng tần tránh xung đột
+        try {
+            val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+            Toast.makeText(
+                getApplication(),
+                "Chọn xe trong Cài đặt Bluetooth và bấm Đồng ý trên cả điện thoại và xe!",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (_: Exception) {
+            Toast.makeText(getApplication(), "Không thể mở Cài đặt Bluetooth máy", Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun unpairBike(device: BikeDevice) {

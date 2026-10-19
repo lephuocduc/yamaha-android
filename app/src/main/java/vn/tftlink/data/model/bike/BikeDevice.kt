@@ -10,5 +10,6 @@ data class BikeDevice(
     val name: String,
     val address: String, // Bluetooth MAC Address
     val rssi: Int = 0,
-    val isPaired: Boolean = false
+    val isPaired: Boolean = false,
+    val classicAddress: String? = null
 )

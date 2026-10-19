@@ -1,6 +1,6 @@
 {
-  "versionCode": 77,
-  "versionName": "0.5.47",
-  "releaseNotes": "1) Nâng cấp độ phân giải bản đồ siêu nét (HD / Full HD Super-sampling): Tích hợp ngói bản đồ Retina @2x (512x512) cho Google Maps Traffic & CartoDB, bổ sung bộ lọc bilinear filtering chống vỡ hạt; sửa lỗi phóng đại trên bản đồ lớn giúp đường xá và tên đường sắc nét từng chi tiết; 2) Thêm mục tùy chỉnh màn hình chiếu đồng hồ xe trong Cài đặt: Cho phép thay đổi cỡ chữ Header chỉ dẫn rẽ (14 - 28 pt) với thanh trượt và 4 phím tắt nhanh kèm thẻ xem trước trực tiếp; 3) Cho phép lựa chọn độ phân giải màn hình chiếu TFT (Siêu nét Full HD 960x468, HD 720x351, SD 480x234).",
+  "versionCode": 78,
+  "versionName": "0.5.48",
+  "releaseNotes": "1) Khắc phục triệt để lỗi treo kết nối và đồng hồ xe load mãi không hiện Approve: Tách biệt hoàn toàn tầng BLE GATT (đọc thông số xe) và tầng Classic BR/EDR (Garmin StreetCross dẫn đường); 2) Loại bỏ lệnh createBond gây kẹt mã hóa BLE SMP trên địa chỉ ngẫu nhiên RPA; 3) Hỗ trợ tự động nhận diện thiết bị ghép đôi Classic và kích hoạt SPP RFCOMM ngay sau khi xác thực CCU; 4) Bổ sung nút 'Ghép đôi' mở trực tiếp Cài đặt Bluetooth máy kèm cơ chế tạm dừng quét BLE để tránh xung đột nghẽn sóng 2.4GHz trong quá trình nhập mã PIN.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

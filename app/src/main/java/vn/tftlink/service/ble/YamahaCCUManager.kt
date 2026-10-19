@@ -172,16 +172,55 @@ class YamahaCCUManager(
         return bluetoothAdapter?.getRemoteDevice(address)
     }
 
+    /**
+     * Tìm thiết bị Classic Bluetooth (BR/EDR) đã ghép đôi trong hệ thống
+     * khớp với tên hoặc địa chỉ của xe Yamaha CCU.
+     */
+    fun findMatchingClassicBondedDevice(name: String, bleAddress: String): BluetoothDevice? {
+        val bonded = bluetoothAdapter?.bondedDevices ?: return null
+        if (bonded.isEmpty()) return null
+
+        // 1. So khớp trực tiếp địa chỉ MAC nếu đã trùng
+        bonded.find { it.address.equals(bleAddress, ignoreCase = true) }?.let { return it }
+
+        val cleanName = name.trim()
+        if (cleanName.isEmpty()) return null
+
+        // 2. So khớp tên đầy đủ (ví dụ "YCCU_0006030100D74D")
+        bonded.find { it.name?.equals(cleanName, ignoreCase = true) == true }?.let { return it }
+
+        // 3. So khớp linh hoạt: chuẩn hoá dấu gạch ngang/dưới và hậu tố serial của CCU
+        val normalizedTarget = cleanName.replace("-", "_").lowercase(Locale.ROOT)
+        for (b in bonded) {
+            val bName = (b.name ?: "").trim().replace("-", "_").lowercase(Locale.ROOT)
+            if (bName.isEmpty()) continue
+
+            if (bName == normalizedTarget) return b
+            if (normalizedTarget.startsWith("yccu_") && bName.startsWith("yccu_")) {
+                val targetSuffix = normalizedTarget.removePrefix("yccu_")
+                val bSuffix = bName.removePrefix("yccu_")
+                if (targetSuffix.contains(bSuffix) || bSuffix.contains(targetSuffix)) return b
+            }
+            if (normalizedTarget.startsWith("ccu_") && bName.startsWith("ccu_")) {
+                val targetSuffix = normalizedTarget.removePrefix("ccu_")
+                val bSuffix = bName.removePrefix("ccu_")
+                if (targetSuffix.contains(bSuffix) || bSuffix.contains(targetSuffix)) return b
+            }
+        }
+        return null
+    }
+
     fun unpairBike(device: BikeDevice): Boolean {
-        val bluetoothDevice = bluetoothAdapter?.getRemoteDevice(device.address) ?: return false
+        val classicDev = findMatchingClassicBondedDevice(device.name, device.address)
+        val targetDevice = classicDev ?: bluetoothAdapter?.getRemoteDevice(device.address) ?: return false
         return try {
-            val method = bluetoothDevice.javaClass.getMethod("removeBond")
-            val success = method.invoke(bluetoothDevice) as? Boolean ?: false
-            log("Đã gọi removeBond() cho xe ${device.name}: kết quả = $success")
+            val method = targetDevice.javaClass.getMethod("removeBond")
+            val success = method.invoke(targetDevice) as? Boolean ?: false
+            log("Đã gọi removeBond() cho xe ${device.name} (${targetDevice.address}): kết quả = $success")
             val current = _discoveredBikes.value.toMutableList()
             val idx = current.indexOfFirst { it.address.equals(device.address, ignoreCase = true) }
             if (idx != -1) {
-                current[idx] = current[idx].copy(isPaired = false)
+                current[idx] = current[idx].copy(isPaired = false, classicAddress = null)
                 _discoveredBikes.value = current
             }
             _lastConnectionError.value = "Đã hủy ghép đôi ${device.name}. Bây giờ hãy vào menu trên xe để xóa điện thoại cũ trước khi kết nối lại."
@@ -256,11 +295,14 @@ class YamahaCCUManager(
                         if (isBike) {
                             val msg = "✓ Đã ghép đôi Bluetooth thành công với xe: $devName (BOND_BONDED)!"
                             log(msg)
-                            _lastConnectionError.value = "Đã ghép đôi thành công. Đang đợi đồng hồ xe sẵn sàng kết nối..."
+                            _lastConnectionError.value = null
                             val current = _discoveredBikes.value.toMutableList()
-                            val idx = current.indexOfFirst { it.address.equals(device.address, ignoreCase = true) }
+                            val idx = current.indexOfFirst {
+                                it.address.equals(device.address, ignoreCase = true) ||
+                                it.name.equals(devName, ignoreCase = true)
+                            }
                             val updatedBike = if (idx != -1) {
-                                val b = current[idx].copy(isPaired = true)
+                                val b = current[idx].copy(isPaired = true, classicAddress = device.address)
                                 current[idx] = b
                                 b
                             } else {
@@ -269,19 +311,25 @@ class YamahaCCUManager(
                                     name = if (devName.isNotBlank()) devName else "Yamaha CCU",
                                     address = device.address,
                                     rssi = -60,
-                                    isPaired = true
+                                    isPaired = true,
+                                    classicAddress = device.address
                                 )
                                 current.add(b)
                                 b
                             }
                             _discoveredBikes.value = current
 
-                            // Đợi 6 giây để đồng hồ xe hoàn tất hiển thị và trở về màn hình vận hành bình thường
-                            scope.launch {
-                                delay(6000)
-                                if (_connectedBike.value == null && (_state.value == BikeConnectionState.SCANNING || _state.value == BikeConnectionState.DISCONNECTED || _state.value == BikeConnectionState.CONNECTING)) {
-                                    log("⚡ Tự động kết nối tới xe vừa ghép đôi thành công: ${updatedBike.name}")
-                                    connect(updatedBike)
+                            // Nếu đang kết nối BLE rồi thì kích hoạt ngay kênh SPP RFCOMM tới thiết bị Classic vừa ghép đôi
+                            if (_state.value == BikeConnectionState.CONNECTED || _state.value == BikeConnectionState.AUTHENTICATING) {
+                                log("⚡ Kích hoạt ngay kênh SPP RFCOMM tới xe vừa ghép đôi thành công ($devName - ${device.address})...")
+                                connectSppChannel(device)
+                            } else {
+                                scope.launch {
+                                    delay(2000)
+                                    if (_connectedBike.value == null && (_state.value == BikeConnectionState.SCANNING || _state.value == BikeConnectionState.DISCONNECTED)) {
+                                        log("⚡ Tự động kết nối tới xe vừa ghép đôi thành công: ${updatedBike.name}")
+                                        connect(updatedBike)
+                                    }
                                 }
                             }
                         }
@@ -296,9 +344,12 @@ class YamahaCCUManager(
                             log("⚠️ $msg")
                             _lastConnectionError.value = msg
                             val current = _discoveredBikes.value.toMutableList()
-                            val idx = current.indexOfFirst { it.address.equals(device.address, ignoreCase = true) }
+                            val idx = current.indexOfFirst {
+                                it.address.equals(device.address, ignoreCase = true) ||
+                                it.name.equals(devName, ignoreCase = true)
+                            }
                             if (idx != -1) {
-                                current[idx] = current[idx].copy(isPaired = false)
+                                current[idx] = current[idx].copy(isPaired = false, classicAddress = null)
                                 _discoveredBikes.value = current
                             }
 
@@ -389,21 +440,23 @@ class YamahaCCUManager(
         if (name.isEmpty()) return
 
         if (isYamahaBikeCCU(name, serviceUuids)) {
-            val isBonded = (device.bondState == BluetoothDevice.BOND_BONDED)
-            val isBonding = (device.bondState == BluetoothDevice.BOND_BONDING)
+            val classicBonded = findMatchingClassicBondedDevice(name, device.address)
+            val isBonded = (device.bondState == BluetoothDevice.BOND_BONDED) || (classicBonded != null)
+            val isBonding = (device.bondState == BluetoothDevice.BOND_BONDING) || (classicBonded?.bondState == BluetoothDevice.BOND_BONDING)
 
             val bike = BikeDevice(
                 id = device.address,
                 name = name,
                 address = device.address,
                 rssi = result.rssi,
-                isPaired = isBonded
+                isPaired = isBonded,
+                classicAddress = classicBonded?.address
             )
 
             val current = _discoveredBikes.value.toMutableList()
             val existingIdx = current.indexOfFirst { it.address.equals(bike.address, ignoreCase = true) }
             if (existingIdx == -1) {
-                log("✓ Thấy xe Yamaha hợp lệ: $name (${device.address}), RSSI: ${result.rssi} dBm (Đã ghép đôi: $isBonded)")
+                log("✓ Thấy xe Yamaha hợp lệ: $name (BLE: ${device.address}, Classic đã ghép: ${classicBonded?.address ?: "chưa"}), RSSI: ${result.rssi} dBm")
                 current.add(bike)
                 _discoveredBikes.value = current
             } else {
@@ -411,8 +464,15 @@ class YamahaCCUManager(
                 _discoveredBikes.value = current
             }
 
+            // Nếu đang trong tiến trình ghép đôi (BOND_BONDING), tạm dừng quét BLE để tránh làm nghẽn sóng RF
+            if (isBonding) {
+                log("⏳ Xe $name đang ghép đôi (BOND_BONDING). Tạm dừng quét BLE để giải phóng sóng Bluetooth...")
+                stopScanning()
+                return
+            }
+
             // Tự động kết nối nếu xe đã từng được ghép đôi và hiện tại chưa có xe nào kết nối
-            if (isBonded && !isBonding && _connectedBike.value == null &&
+            if (isBonded && _connectedBike.value == null &&
                 (_state.value == BikeConnectionState.SCANNING || _state.value == BikeConnectionState.DISCONNECTED)
             ) {
                 log("⚡ Tự động kết nối tới xe đã ghép đôi: $name (${device.address})")
@@ -449,17 +509,18 @@ class YamahaCCUManager(
                 name = d.name ?: "Yamaha CCU",
                 address = d.address,
                 rssi = -60,
-                isPaired = true
+                isPaired = true,
+                classicAddress = d.address
             )
             curList.add(bike)
             log(" 🏍️ Xe Yamaha đã ghép đôi sẵn trong máy: ${bike.name} (${bike.address})")
         }
         _discoveredBikes.value = curList
 
-        log("🔍 Bắt đầu quét BLE tìm xe Yamaha xung quanh (đã ghép đôi: ${bonded.size} thiết bị)...")
+        log("🔍 Bắt đầu quét BLE tìm xe Yamaha xung quanh (đã ghép đôi: ${candidateBonded.size} xe)...")
 
         val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
             .build()
 
         val filters = listOf(
@@ -499,33 +560,28 @@ class YamahaCCUManager(
             return
         }
 
-        // Kiểm tra trạng thái ghép đôi Bluetooth
-        if (bluetoothDevice.bondState == BluetoothDevice.BOND_BONDING) {
+        val classicBondedDevice = findMatchingClassicBondedDevice(device.name, device.address)
+        val isClassicPaired = classicBondedDevice != null || (bluetoothDevice.bondState == BluetoothDevice.BOND_BONDED)
+
+        // Kiểm tra nếu xe đang trong tiến trình ghép đôi từ Cài đặt Bluetooth máy
+        if (bluetoothDevice.bondState == BluetoothDevice.BOND_BONDING || classicBondedDevice?.bondState == BluetoothDevice.BOND_BONDING) {
             val msg = "Xe ${device.name} đang trong quá trình ghép đôi. Vui lòng xác nhận trên màn hình xe và điện thoại..."
             log("⏳ $msg")
             _lastConnectionError.value = msg
             _state.value = BikeConnectionState.CONNECTING
-            _connectedBike.value = device
-            return
-        }
-
-        if (bluetoothDevice.bondState == BluetoothDevice.BOND_NONE) {
-            val msg = "Đang gửi yêu cầu ghép đôi tới ${device.name}... Vui lòng xác nhận mã PIN trên cả điện thoại và đồng hồ xe!"
-            log("ℹ️ $msg")
-            _lastConnectionError.value = msg
-            _state.value = BikeConnectionState.CONNECTING
-            _connectedBike.value = device
-            val initiated = bluetoothDevice.createBond()
-            if (!initiated) {
-                log("⚠️ Lệnh createBond trả về false. Có thể Bluetooth đang bận.")
-            }
+            _connectedBike.value = device.copy(isPaired = isClassicPaired, classicAddress = classicBondedDevice?.address)
             return
         }
 
         _state.value = BikeConnectionState.CONNECTING
-        _connectedBike.value = device
+        _connectedBike.value = device.copy(isPaired = isClassicPaired, classicAddress = classicBondedDevice?.address)
         _lastConnectionError.value = null
-        log("Đang kết nối BLE GATT tới xe ${device.name} (${device.address})...")
+
+        if (isClassicPaired) {
+            log("Đang kết nối tới xe ${device.name} (BLE: ${device.address}, Classic: ${classicBondedDevice?.address ?: device.address})...")
+        } else {
+            log("Đang kết nối BLE GATT tới xe ${device.name} (${device.address}) [Chưa ghép đôi Classic]...")
+        }
 
         // Trên Android: Dừng quét BLE và chờ 300ms để BLE controller ổn định trước khi connectGatt
         scope.launch {
@@ -542,11 +598,11 @@ class YamahaCCUManager(
                 BluetoothDevice.TRANSPORT_LE
             )
 
-            // Watchdog 20 giây: Nếu sau 20s vẫn chưa kết nối được thì báo timeout
+            // Watchdog 25 giây: Nếu sau 25s vẫn chưa kết nối được thì báo timeout
             connectionWatchdogJob = launch {
-                delay(20000)
+                delay(25000)
                 if (_state.value == BikeConnectionState.CONNECTING && _connectedBike.value != null) {
-                    val timeoutMsg = "Hết thời gian chờ kết nối với ${device.name} (Timeout 20s). Hãy bật khóa xe, hoặc hủy ghép đôi để kết nối lại."
+                    val timeoutMsg = "Hết thời gian chờ kết nối với ${device.name} (Timeout 25s). Hãy bật khóa xe hoặc kiểm tra Bluetooth."
                     log("⚠️ $timeoutMsg")
                     _lastConnectionError.value = timeoutMsg
                     handleDisconnection()
@@ -752,8 +808,17 @@ class YamahaCCUManager(
         sppJob?.cancel()
         sppJob = scope.launch(Dispatchers.IO) {
             try {
-                log("Đang mở kênh SPP RFCOMM với màn hình xe (${device.address})...")
-                val socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+                log("Đang mở kênh SPP RFCOMM với màn hình xe (${device.name ?: "Yamaha"} - ${device.address})...")
+                val socket = try {
+                    device.createRfcommSocketToServiceRecord(SPP_UUID)
+                } catch (e: Exception) {
+                    try {
+                        device.createInsecureRfcommSocketToServiceRecord(SPP_UUID)
+                    } catch (_: Exception) {
+                        val m = device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+                        m.invoke(device, 1) as BluetoothSocket
+                    }
+                }
                 socket.connect()
                 sppSocket = socket
                 sppInputStream = socket.inputStream
@@ -1092,12 +1157,22 @@ class YamahaCCUManager(
         wasConnectedToBike = true
         onBikeConnected?.invoke()
 
-        // Mở kênh SPP RFCOMM cho Garmin StreetCross sau khi BLE GATT đã xác thực thành công
-        _connectedBike.value?.address?.let { addr ->
-            val dev = bluetoothAdapter?.getRemoteDevice(addr)
-            if (dev != null && (sppSocket == null || sppSocket?.isConnected != true)) {
-                connectSppChannel(dev)
+        // Tìm thiết bị Classic Bluetooth tương ứng để mở kênh SPP RFCOMM cho Garmin StreetCross
+        val curBike = _connectedBike.value
+        val classicDev = curBike?.let { findMatchingClassicBondedDevice(it.name, it.address) }
+            ?: curBike?.classicAddress?.let { bluetoothAdapter?.getRemoteDevice(it) }
+            ?: curBike?.address?.let { addr ->
+                val d = bluetoothAdapter?.getRemoteDevice(addr)
+                if (d?.bondState == BluetoothDevice.BOND_BONDED) d else null
             }
+
+        if (classicDev != null && classicDev.bondState == BluetoothDevice.BOND_BONDED) {
+            if (sppSocket == null || sppSocket?.isConnected != true) {
+                log("✓ Đã xác thực BLE CCU! Đang mở kênh SPP RFCOMM tới ${classicDev.name ?: "xe"} (${classicDev.address})...")
+                connectSppChannel(classicDev)
+            }
+        } else {
+            log("ℹ️ Đã kết nối BLE & Telemetry thành công! Xe chưa ghép đôi Classic trong Cài đặt máy nên tạm thời chưa mở kênh dẫn đường.")
         }
     }
 

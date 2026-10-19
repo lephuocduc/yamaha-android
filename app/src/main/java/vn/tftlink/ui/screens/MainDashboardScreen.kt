@@ -36,6 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -438,17 +439,42 @@ fun MainDashboardScreen(
                                             Text("Hủy ghép", color = TextMuted, fontSize = 11.sp)
                                         }
                                         Spacer(modifier = Modifier.width(4.dp))
-                                    }
-
-                                    Button(
-                                        onClick = {
-                                            viewModel.connectBike(bike)
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = NeonGreen),
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                                    ) {
-                                        Text("Kết nối", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Button(
+                                            onClick = {
+                                                viewModel.connectBike(bike)
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = NeonGreen),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                        ) {
+                                            Text("Kết nối", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+                                    } else {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    viewModel.openBluetoothSettings(context)
+                                                },
+                                                border = BorderStroke(1.dp, YamahaCyan),
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Icon(Icons.Default.Bluetooth, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Ghép đôi", color = YamahaCyan, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                            }
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Button(
+                                                onClick = {
+                                                    viewModel.connectBike(bike)
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = NeonGreen),
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text("Kết nối BLE", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -462,14 +488,19 @@ fun MainDashboardScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    TextButton(onClick = { viewModel.openBluetoothSettings(context) }) {
+                        Icon(Icons.Default.Bluetooth, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Cài đặt Bluetooth", color = YamahaCyan, fontSize = 11.sp)
+                    }
                     TextButton(onClick = { showPairingGuideDialog = true }) {
-                        Text("Hướng dẫn ghép đôi", color = TextSecondary, fontSize = 12.sp)
+                        Text("Hướng dẫn", color = TextSecondary, fontSize = 11.sp)
                     }
                     TextButton(onClick = {
                         showScanDialog = false
                         viewModel.stopScanning()
                     }) {
-                        Text("Đóng", color = YamahaCyan, fontWeight = FontWeight.Bold)
+                        Text("Đóng", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             },
@@ -523,22 +554,40 @@ fun MainDashboardScreen(
 
                     Card(
                         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                        border = BorderStroke(1.dp, DarkSurfaceBorder)
+                        border = BorderStroke(1.dp, NeonGreen.copy(alpha = 0.5f))
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
-                            Text("Bước 3: Kết nối lại từ trong app", color = NeonGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Bước 3: Ghép đôi qua Cài đặt Bluetooth máy", color = NeonGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("Mở app, bấm \"Kết nối xe\" -> Chọn tên xe -> Khi màn hình điện thoại và đồng hồ xe hiện mã PIN 6 số, nhấn ĐỒNG Ý / GHÉP ĐÔI trên cả 2 bên.", color = TextPrimary, fontSize = 11.sp)
+                            Text("• Nhấn nút \"Mở Cài đặt Bluetooth\" bên dưới.\n• Trong danh sách thiết bị quét được, chọn tên xe Yamaha (YCCU_...).\n• Màn hình xe và điện thoại sẽ hiện mã số PIN: Nhấn ĐỒNG Ý / APPROVE trên cả điện thoại và xe.\n• Sau khi ghép đôi xong, quay lại app NConnect sẽ tự động kết nối và chiếu bản đồ!", color = TextPrimary, fontSize = 11.sp)
                         }
                     }
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = { showPairingGuideDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Đã hiểu", color = Color.Black, fontWeight = FontWeight.Bold)
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.openBluetoothSettings(context)
+                        },
+                        border = BorderStroke(1.dp, YamahaCyan),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Bluetooth, contentDescription = null, tint = YamahaCyan, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Cài đặt Bluetooth", color = YamahaCyan, fontSize = 11.sp)
+                    }
+                    Button(
+                        onClick = { showPairingGuideDialog = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Đã hiểu", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
                 }
             },
             containerColor = DarkSurface
