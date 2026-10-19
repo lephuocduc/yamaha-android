@@ -126,7 +126,7 @@ import vn.tftlink.R
 
 private val GoogleTrafficTileSource = object : OnlineTileSourceBase(
     "GoogleTrafficHD",
-    1, 20, 256, ".png",
+    1, 20, 512, ".png",
     arrayOf(
         "https://mt0.google.com/vt/lyrs=m,traffic&hl=vi&scale=2",
         "https://mt1.google.com/vt/lyrs=m,traffic&hl=vi&scale=2",
@@ -144,7 +144,7 @@ private val GoogleTrafficTileSource = object : OnlineTileSourceBase(
 
 private val GoogleSatelliteTileSource = object : OnlineTileSourceBase(
     "GoogleSatelliteHD",
-    1, 20, 256, ".jpg",
+    1, 20, 512, ".jpg",
     arrayOf(
         "https://mt0.google.com/vt/lyrs=y,traffic&hl=vi&scale=2",
         "https://mt1.google.com/vt/lyrs=y,traffic&hl=vi&scale=2",
@@ -1011,7 +1011,7 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     osmdroidMapView?.let { mv ->
                         mv.mapOrientation = if (targetIsNorthUp) 0f else -heading
                     }
-                    val msg = if (targetIsNorthUp) "Chế độ bản đồ: Cố định hướng Bắc (North-Up)" else "Chế độ bản đồ: Xoay theo đầu xe (Head Tracking)"
+                    val msg = if (targetIsNorthUp) "Chế độ bản đồ: Cố định hướng Bắc (North-Up - chữ xuôi)" else "Chế độ bản đồ: Xoay theo đầu xe (chữ bản đồ sẽ xoay theo góc lái)"
                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 },
                 containerColor = DarkSurfaceCard,

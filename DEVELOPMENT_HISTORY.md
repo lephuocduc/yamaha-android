@@ -848,3 +848,39 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - *Tầng 1 (OkHttp TLS 1.3)*: Gửi POST payload Valhalla với bộ `Tls13SocketFactory` mới và User-Agent `"TFTLink/0.1 (personal motorcycle display app)"`.
      - *Tầng 2 (Dự phòng theo cơ chế app NConnect gốc)*: Nếu OkHttp gặp lỗi mạng/TLS, tự động chuyển sang `fetchValhallaViaHttpURLConnection` gửi GET `?json=...` qua `HttpsURLConnection` đúng chuẩn của app gốc.
      - *Tầng 3 (Dự phòng OSRM đa tầng)*: Bổ sung endpoint `routed-bike` chuyên cho xe hai bánh của OSM Germany trước khi hạ cấp xuống `routed-car` và Project OSRM HTTP cleartext.
+
+---
+
+### 📌 Quy tắc 19: Khắc phục xoay ngược bản đồ (VivoCity), Tối ưu pin nền & Nâng cấp toàn diện nhật ký BLE và tab Lộ trình (v0.5.41 Build 71)
+- **Các phản hồi và triệu chứng thực tế của người dùng**:
+  1. *tôi kết nối với xe ko được, thêm log để dễ troubleshooting*
+  2. *trong phần thông báo của điện thoại lúc nào cũng hiện "Chưa kết nối xe đang chờ bật khóa điện", thì nó có tốn pin ko?*
+  3. *tab lộ trình trên app android mới chưa hoạt động tốt, có thể tham khảo tab lộ trình trong app ios cũ*
+  4. *check hình, lỗi bản đồ: Chữ VivoCity và icon bị xoay ngược 180 độ, vỡ hạt pixel*
+  5. *check log: Log chẩn đoán không có dòng nào về BLE, Valhalla báo SSLHandshakeException.*
+- **Nguyên nhân gốc rễ kỹ thuật & Phân tích chuyên sâu**:
+  1. **Lỗi chữ bản đồ xoay ngược (VivoCity)**: Osmdroid hiển thị bản đồ raster tile (ảnh bitmap PNG). Trước đây, biến `_isNorthUp` trong `MainViewModel` mặc định là `false` (Head-Tracking). Khi xoay theo heading (`mv.mapOrientation = -heading`), toàn bộ Canvas raster bị xoay theo góc lái, khiến mọi nhãn chữ đường phố và biểu tượng POI (như SC VivoCity) bị lộn ngược và vỡ hạt đường viền (bilinear aliasing).
+  2. **Vấn đề tiêu hao pin của thông báo nền**: Trong `BikeForegroundService`, dịch vụ định vị liên tục yêu cầu `Priority.PRIORITY_HIGH_ACCURACY` ở chu kỳ **1000ms (1 giây)** ngay cả khi xe ngắt kết nối (`DISCONNECTED`) và không dẫn đường, khiến phần cứng GPS của điện thoại hoạt động 100% công suất liên tục, gây hao pin đáng kể.
+  3. **Tab Lộ trình chưa hoạt động tốt**: Trong `TripHistoryManager`, danh sách tọa độ chuyến đi không được lưu vào `polylineJson` (luôn rỗng `"[]"`), đồng thời ở `TripHistoryScreen`, các thẻ chuyến đi không bấm vào được, thiếu hoàn toàn màn hình xem lại lộ trình trên bản đồ, điểm xuất phát/kết thúc và các thông số chi tiết như bản iOS.
+  4. **Không kết nối được xe & thiếu log chẩn đoán BLE**:
+     - Trong `YamahaCCUManager.handleScanResult`: Nếu thiết bị BLE phát gói tin quảng bá có `name` rỗng, hệ thống thoát ngay (`if (name.isEmpty()) return`) mà không kiểm tra `serviceUuids`, làm lọt các cụm đồng hồ xe chỉ phát UUID.
+     - Hệ thống không kiểm tra danh sách thiết bị đã từng ghép đôi trong Cài đặt Bluetooth máy (`bluetoothAdapter.bondedDevices`).
+     - Thiếu hoàn toàn nhật ký chẩn đoán về trạng thái Bluetooth hệ thống, trạng thái GPS vị trí máy (trên Android 9, tắt GPS sẽ chặn ngầm toàn bộ BLE scanning).
+     - Thiếu diễn giải các mã lỗi GATT (như mã lỗi phổ biến 133, 8, 19).
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Bản đồ (`LiveNavigationScreen.kt` & `MainViewModel.kt`)**:
+     - Chuyển chế độ mặc định của bản đồ sang **Cố định hướng Bắc (`isNorthUp = true`)**: Bản đồ luôn giữ chiều xuôi chuẩn xác, các nhãn chữ và địa danh luôn hiển thị ngay ngắn, sắc nét. Mũi tên định vị (puck) tự do xoay theo hướng lái xe.
+     - Cấu hình kích thước ngói `OnlineTileSourceBase` lên **512px** tương ứng với tham số `scale=2`, loại bỏ hiện tượng Osmdroid phóng đại ngói gây vỡ hạt pixel trên màn hình độ phân giải cao.
+  2. **Tiết kiệm pin cho dịch vụ nền (`BikeForegroundService.kt`)**:
+     - Bổ sung cơ chế điều tiết định vị thông minh: Khi xe ngắt kết nối và không dẫn đường, tự động hạ cấp xuống `Priority.PRIORITY_BALANCED_POWER_ACCURACY` chu kỳ **30.000ms (30 giây)** để CPU và chip GPS nghỉ ngơi tối đa.
+     - Khi xe kết nối hoặc bắt đầu dẫn đường/ghi lộ trình, tự động kích hoạt lại chế độ chính xác cao 1 giây.
+     - Thêm nút **"Tắt chạy ngầm"** trực tiếp trên thông báo nền để người dùng có thể tắt dịch vụ bất cứ lúc nào.
+  3. **Nâng cấp tab Lộ trình (`TripHistoryManager.kt` & `TripHistoryScreen.kt`)**:
+     - Tự động thu thập tọa độ GPS mỗi 15 mét trong suốt chuyến đi và lưu dưới dạng JSON chuẩn vào trường `polylineJson` của Room Database.
+     - Bổ sung hộp thoại / Bottom Sheet **Chi tiết lộ trình (`TripDetailDialog`)**: Hiển thị bản đồ Osmdroid thu nhỏ vẽ đường đi màu Cyan nổi bật, ghim điểm xuất phát và kết thúc, tự động căn chỉnh BoundingBox vừa vặn, cùng lưới thông số đầy đủ (quãng đường, thời gian, tốc độ TB, tốc độ tối đa, thời gian đỗ, tên xe, địa chỉ chi tiết).
+  4. **Tối ưu kết nối BLE & Nhật ký chẩn đoán toàn diện (`YamahaCCUManager.kt` & `MainViewModel.kt`)**:
+     - Khi bắt đầu quét, tự động kiểm tra và thêm toàn bộ các xe Yamaha đã từng ghép đôi trong máy (`bondedDevices`) vào danh sách phát hiện.
+     - Cảnh báo trực tiếp trên log nếu Vị trí (GPS) của điện thoại đang tắt (nguyên nhân hàng đầu gây mất quét BLE trên Android 9).
+     - Cho phép nhận diện CCU qua `serviceUuids` ngay cả khi tên thiết bị trong gói quảng bá ban đầu chưa kịp nạp.
+     - Bổ sung diễn giải chi tiết cho mọi mã sự kiện GATT (`status 133` - lỗi bộ đệm BT Android, `status 8` - timeout, `status 19` - xe ngắt kết nối).
+     - Bổ sung thông tin Bluetooth và GPS hệ thống vào phần đầu của bản báo cáo chẩn đoán hệ thống.

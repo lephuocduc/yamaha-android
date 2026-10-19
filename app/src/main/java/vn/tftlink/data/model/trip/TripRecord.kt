@@ -65,4 +65,31 @@ data class TripRecord(
             val sdf = SimpleDateFormat("HH:mm", Locale("vi", "VN"))
             return "${sdf.format(Date(startTime))} - ${sdf.format(Date(endTime))}"
         }
+
+    fun getParsedPolylinePoints(): List<LatLng> {
+        return try {
+            val listType = object : com.google.gson.reflect.TypeToken<List<List<Double>>>() {}.type
+            val raw: List<List<Double>> = com.google.gson.Gson().fromJson(polylineJson, listType) ?: emptyList()
+            raw.mapNotNull {
+                if (it.size >= 2) LatLng(it[0], it[1]) else null
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    val relativeParkingDuration: String
+        get() {
+            val elapsed = (System.currentTimeMillis() - parkingTimestamp) / 1000
+            return when {
+                elapsed < 60 -> "Vừa đỗ xe"
+                elapsed < 3600 -> "Đã đỗ ${elapsed / 60} phút"
+                elapsed < 86400 -> {
+                    val h = elapsed / 3600
+                    val m = (elapsed % 3600) / 60
+                    if (m > 0) "Đã đỗ ${h}h ${m}p" else "Đã đỗ $h giờ"
+                }
+                else -> "Đã đỗ ${elapsed / 86400} ngày"
+            }
+        }
 }

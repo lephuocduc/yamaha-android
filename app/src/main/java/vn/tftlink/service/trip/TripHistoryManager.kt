@@ -63,6 +63,7 @@ class TripHistoryManager private constructor(
     private var sessionStartAddress: String = ""
     private var lastRecordedCoord: LatLng? = null
     private var sessionBikeName: String = "Yamaha NMAX"
+    private val sessionPoints = mutableListOf<LatLng>()
 
     fun startTripSession(startCoord: LatLng, bikeName: String = "Yamaha NMAX") {
         if (_isRecordingSession.value) return
@@ -76,6 +77,10 @@ class TripHistoryManager private constructor(
         _sessionDurationSeconds.value = 0L
         _sessionMaxSpeedKmh.value = 0.0
         _isRecordingSession.value = true
+        synchronized(sessionPoints) {
+            sessionPoints.clear()
+            sessionPoints.add(startCoord)
+        }
 
         sessionStartAddress = String.format(Locale.US, "%.5f, %.5f", startCoord.latitude, startCoord.longitude)
         NavigationEngine.getInstance(context, scope).reverseGeocode(startCoord) { title, address ->
@@ -98,6 +103,13 @@ class TripHistoryManager private constructor(
             if (delta >= 2.0) { // Lọc nhiễu GPS đứng yên
                 _sessionDistanceMeters.value += delta
                 lastRecordedCoord = loc
+
+                synchronized(sessionPoints) {
+                    val lastPt = sessionPoints.lastOrNull()
+                    if (lastPt == null || GeoUtils.computeDistanceMeters(lastPt, loc) >= 15.0) {
+                        sessionPoints.add(loc)
+                    }
+                }
             }
         }
 
@@ -123,7 +135,26 @@ class TripHistoryManager private constructor(
 
         // Chỉ lưu chuyến đi nếu di chuyển > 30 mét hoặc > 20 giây
         if (distance < 30.0 && durationSec < 20) {
+            synchronized(sessionPoints) { sessionPoints.clear() }
             return
+        }
+
+        val pointsCopy: List<LatLng>
+        synchronized(sessionPoints) {
+            if (finalEndCoord.latitude != 0.0 && finalEndCoord.longitude != 0.0) {
+                val lastPt = sessionPoints.lastOrNull()
+                if (lastPt == null || GeoUtils.computeDistanceMeters(lastPt, finalEndCoord) >= 5.0) {
+                    sessionPoints.add(finalEndCoord)
+                }
+            }
+            pointsCopy = sessionPoints.toList()
+            sessionPoints.clear()
+        }
+
+        val polylineJson = try {
+            com.google.gson.Gson().toJson(pointsCopy.map { listOf(it.latitude, it.longitude) })
+        } catch (_: Exception) {
+            "[]"
         }
 
         scope.launch(Dispatchers.IO) {
@@ -146,7 +177,8 @@ class TripHistoryManager private constructor(
                 averageSpeedKmh = (avgSpeed * 10).roundToInt() / 10.0,
                 maxSpeedKmh = (maxSpeed * 10).roundToInt() / 10.0,
                 parkingTimestamp = endTimeMs,
-                bikeName = sessionBikeName
+                bikeName = sessionBikeName,
+                polylineJson = polylineJson
             )
 
             tripDao.insertTrip(record)

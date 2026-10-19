@@ -99,7 +99,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isRerouting: StateFlow<Boolean> = navEngine.isRerouting
     val destinationTitle: StateFlow<String> = navEngine.destinationTitle
 
-    private val _isNorthUp = MutableStateFlow(false)
+    private val _isNorthUp = MutableStateFlow(true)
     val isNorthUp: StateFlow<Boolean> = _isNorthUp.asStateFlow()
 
     // Cluster Map Engine Mode (Google Maps Traffic vs OSM CartoDB)
@@ -573,6 +573,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sb.appendLine("Thời gian xuất: ${sdf.format(java.util.Date())}")
         sb.appendLine("Phiên bản ứng dụng: ${getCurrentVersionName()} (Build ${getCurrentVersionCode()})")
         sb.appendLine("Thiết bị: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE}, API ${android.os.Build.VERSION.SDK_INT})")
+        val btManager = getApplication<android.app.Application>().getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
+        val btAdapter = btManager?.adapter
+        val isBtEnabled = btAdapter?.isEnabled == true
+        val lm = getApplication<android.app.Application>().getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+        val isGpsEnabled = lm?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) == true ||
+                lm?.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) == true
+        sb.appendLine("Bluetooth: ${if (isBtEnabled) "BẬT" else "TẮT"} | Vị trí (GPS máy): ${if (isGpsEnabled) "BẬT" else "TẮT (CẦN BẬT ĐỂ QUÉT BLE TRÊN ANDROID 9)"}")
+        val bondedBikes = btAdapter?.bondedDevices?.filter {
+            vn.tftlink.service.ble.YamahaCCUManager.isYamahaBikeCCU(it.name ?: "", emptyList())
+        } ?: emptyList()
+        sb.appendLine("Xe đã ghép đôi trong máy: ${if (bondedBikes.isEmpty()) "Chưa có thiết bị xe nào" else bondedBikes.joinToString { "${it.name} (${it.address})" }}")
         sb.appendLine("Trạng thái kết nối xe: ${connectionState.value}")
         sb.appendLine("Xe đang kết nối: ${connectedBike.value?.name ?: "Chưa kết nối"} (${connectedBike.value?.address ?: "N/A"})")
         sb.appendLine("Ắc quy xe: ${telemetry.value.batteryVoltage} V | Nhiệt độ máy: ${telemetry.value.engineTemperature} °C | Vòng tua: ${telemetry.value.rpm} RPM | Nhiên liệu: ${telemetry.value.fuelPercent}%")

@@ -15,6 +15,7 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.location.LocationManager
 import android.os.Build
 import android.os.ParcelUuid
 import com.google.android.gms.maps.model.LatLng
@@ -247,10 +248,20 @@ class YamahaCCUManager(
 
     private fun handleScanResult(result: ScanResult) {
         val device = result.device
-        val name = device.name ?: result.scanRecord?.deviceName ?: ""
-        if (name.isEmpty()) return
-
+        val rawName = device.name ?: result.scanRecord?.deviceName ?: ""
         val serviceUuids = result.scanRecord?.serviceUuids?.map { it.uuid } ?: emptyList()
+
+        val name = if (rawName.isBlank()) {
+            if (serviceUuids.contains(CLUSTER_LINK_SERVICE_UUID) || serviceUuids.contains(STREET_CROSS_SERVICE_UUID)) {
+                "Yamaha CCU (${device.address.takeLast(5)})"
+            } else {
+                ""
+            }
+        } else {
+            rawName
+        }
+
+        if (name.isEmpty()) return
 
         if (isYamahaBikeCCU(name, serviceUuids)) {
             val bike = BikeDevice(
@@ -264,7 +275,7 @@ class YamahaCCUManager(
             val current = _discoveredBikes.value.toMutableList()
             val existingIdx = current.indexOfFirst { it.address == bike.address }
             if (existingIdx == -1) {
-                log("Thấy xe Yamaha hợp lệ: $name (${device.address}), RSSI: ${result.rssi}")
+                log("✓ Thấy xe Yamaha hợp lệ: $name (${device.address}), RSSI: ${result.rssi} dBm")
                 current.add(bike)
                 _discoveredBikes.value = current
 
@@ -282,14 +293,39 @@ class YamahaCCUManager(
     fun startScanning() {
         val scanner = bluetoothAdapter?.bluetoothLeScanner
         if (scanner == null || bluetoothAdapter?.isEnabled != true) {
-            log("Bluetooth chưa được bật")
+            log("❌ Bluetooth chưa được bật trên điện thoại. Vui lòng bật Bluetooth.")
             _state.value = BikeConnectionState.ERROR
             return
         }
 
+        // Kiểm tra dịch vụ định vị GPS (Android 9 trở lên bắt buộc GPS để scan BLE)
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        val isGpsEnabled = lm?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+                lm?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+        if (!isGpsEnabled) {
+            log("⚠️ VỊ TRÍ (GPS) ĐANG TẮT! Trên Android 9, bắt buộc bật Vị trí trong Cài đặt nhanh thì mới quét được BLE.")
+        }
+
         _state.value = BikeConnectionState.SCANNING
-        _discoveredBikes.value = emptyList()
-        log("Bắt đầu quét BLE tìm xe Yamaha...")
+
+        // Lấy danh sách các thiết bị đã từng ghép đôi trong Cài đặt Bluetooth máy
+        val bonded = bluetoothAdapter?.bondedDevices ?: emptySet()
+        val candidateBonded = bonded.filter { isYamahaBikeCCU(it.name ?: "", emptyList()) }
+        val curList = mutableListOf<BikeDevice>()
+        for (d in candidateBonded) {
+            val bike = BikeDevice(
+                id = d.address,
+                name = d.name ?: "Yamaha CCU",
+                address = d.address,
+                rssi = -60,
+                isPaired = true
+            )
+            curList.add(bike)
+            log(" 🏍️ Xe Yamaha đã ghép đôi sẵn trong máy: ${bike.name} (${bike.address})")
+        }
+        _discoveredBikes.value = curList
+
+        log("🔍 Bắt đầu quét BLE tìm xe Yamaha xung quanh (đã ghép đôi: ${bonded.size} thiết bị)...")
 
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -319,7 +355,7 @@ class YamahaCCUManager(
         stopScanning()
         _state.value = BikeConnectionState.CONNECTING
         _connectedBike.value = device
-        log("Đang kết nối tới xe ${device.name} (${device.address})...")
+        log("Đang kết nối BLE GATT tới xe ${device.name} (${device.address})...")
 
         val bluetoothDevice = bluetoothAdapter?.getRemoteDevice(device.address)
         if (bluetoothDevice == null) {
@@ -343,14 +379,26 @@ class YamahaCCUManager(
 
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
-            val deviceName = gatt?.device?.name ?: "Xe Yamaha"
+            val deviceName = gatt?.device?.name ?: _connectedBike.value?.name ?: "Xe Yamaha"
+            val statusDesc = when (status) {
+                BluetoothGatt.GATT_SUCCESS -> "Thành công (GATT_SUCCESS)"
+                133 -> "Lỗi 133 (GATT_ERROR: Bộ đệm Bluetooth Android bị đầy/lỗi, hãy tắt bật lại Bluetooth hoặc xóa ghép đôi xe)"
+                8 -> "Lỗi 8 (GATT_CONN_TIMEOUT: Hết thời gian chờ, xe quá xa hoặc chưa bật khóa)"
+                19 -> "Lỗi 19 (GATT_CONN_TERMINATE_PEER_USER: Xe chủ động ngắt kết nối / đã tắt khóa điện)"
+                22 -> "Lỗi 22 (GATT_CONN_TERMINATE_LOCAL_HOST: Điện thoại chủ động ngắt kết nối)"
+                else -> "GATT status=$status"
+            }
+
             if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
                 log("✓ Đã kết nối BLE tầng liên kết với $deviceName, đang yêu cầu MTU 512...")
                 _state.value = BikeConnectionState.CONNECTING
                 // Yêu cầu MTU tối đa để stream ảnh JPEG mượt mà
                 gatt?.requestMtu(512)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                log("Xe ngắt kết nối BLE (status=$status)")
+                log("Xe ngắt kết nối BLE ($statusDesc)")
+                handleDisconnection()
+            } else if (status != BluetoothGatt.GATT_SUCCESS) {
+                log("✗ Kết nối BLE thất bại ($statusDesc)")
                 handleDisconnection()
             }
         }
@@ -366,8 +414,13 @@ class YamahaCCUManager(
                 return
             }
 
-            log("Đã tìm thấy ${gatt.services.size} dịch vụ trên xe")
+            log("Đã tìm thấy ${gatt.services.size} dịch vụ trên xe:")
             for (service in gatt.services) {
+                val isCluster = service.uuid == CLUSTER_LINK_SERVICE_UUID
+                val isStreet = service.uuid == STREET_CROSS_SERVICE_UUID
+                val tag = if (isCluster) " [Yamaha ClusterLink]" else if (isStreet) " [StreetCross]" else ""
+                log(" • Dịch vụ: ${service.uuid}$tag")
+
                 for (char in service.characteristics) {
                     val isWritable = (char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0 ||
                             (char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0
@@ -400,7 +453,7 @@ class YamahaCCUManager(
                 streetCross.displaySpec.isReadyForStreaming = true
                 onBikeConnectedSuccessfully()
             } else {
-                log("✗ Thiết bị không có đặc tính CCU Yamaha. Hủy kết nối.")
+                log("✗ Thiết bị không có đặc tính CCU Yamaha mong muốn. Hủy kết nối.")
                 disconnect()
             }
         }
@@ -523,7 +576,7 @@ class YamahaCCUManager(
                 // Khởi động luồng đọc NaviLite frames liên tục
                 runNaviLiteReader()
             } catch (e: Exception) {
-                log("Kênh SPP không khả dụng, sử dụng kênh BLE GATT dự phòng.")
+                log("Kênh SPP không khả dụng (${e.javaClass.simpleName}: ${e.message}), sử dụng kênh BLE GATT dự phòng.")
             }
         }
     }

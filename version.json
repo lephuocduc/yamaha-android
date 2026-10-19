@@ -1,6 +1,6 @@
 {
-  "versionCode": 70,
-  "versionName": "0.5.40",
-  "releaseNotes": "1) Bỏ nút 'Kết thúc' trong thẻ theo dõi ở tab Lộ trình; 2) Khắc phục lỗi SSLHandshakeException khi gọi Valhalla Motorcycle Routing: kích hoạt tường minh TLS 1.3 và toàn bộ cipher suites cho Android 9/các máy cũ; 3) Tích hợp chiến lược dự phòng HttpsURLConnection với GET ?json=... và User-Agent TFTLink chuẩn như app NConnect gốc; 4) Bổ sung phân tầng OSRM routed-bike dành riêng cho xe hai bánh.",
+  "versionCode": 71,
+  "versionName": "0.5.41",
+  "releaseNotes": "1) Bổ sung nhật ký chi tiết chẩn đoán kết nối BLE, Bluetooth hệ thống, GPS và tự động nhận diện xe đã ghép đôi; 2) Tối ưu hóa tiêu thụ pin cho dịch vụ nền: tự động chuyển sang chế độ định vị tiết kiệm pin khi xe ngắt kết nối và bổ sung nút 'Tắt chạy ngầm' trên thông báo; 3) Nâng cấp toàn diện tab Lộ trình: lưu trữ polyline toạ độ, thẻ chuyến đi có thể bấm vào xem chi tiết bản đồ lộ trình, vận tốc, thời gian đỗ; 4) Khắc phục lỗi xoay ngược chữ bản đồ (VivoCity) bằng cách mặc định cố định hướng Bắc (North-Up) và nâng độ phân giải ngói bản đồ HD 512px.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

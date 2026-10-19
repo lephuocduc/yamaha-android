@@ -61,6 +61,28 @@ import vn.tftlink.ui.theme.TextPrimary
 import vn.tftlink.ui.theme.TextSecondary
 import vn.tftlink.ui.theme.YamahaCyan
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.TwoWheeler
+import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.ui.viewinterop.AndroidView
+import org.osmdroid.views.MapView
+import org.osmdroid.views.CustomZoomButtonsController
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.BoundingBox
+import org.osmdroid.views.overlay.Polyline as OsmPolyline
+import org.osmdroid.views.overlay.Marker as OsmMarker
+import androidx.core.content.ContextCompat
+import vn.tftlink.R
+
 @Composable
 fun TripHistoryScreen(viewModel: MainViewModel) {
     val trips by viewModel.tripHistory.collectAsState()
@@ -70,6 +92,7 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
 
     var showClearAllDialog by remember { mutableStateOf(false) }
     var tripToDelete by remember { mutableStateOf<TripRecord?>(null) }
+    var selectedTripForDetail by remember { mutableStateOf<TripRecord?>(null) }
 
     val totalDistanceMeters = trips.sumOf { it.distanceMeters }
     val totalSeconds = trips.sumOf { it.durationSeconds }
@@ -245,6 +268,7 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
                 items(trips, key = { it.id }) { trip ->
                     TripRecordCard(
                         trip = trip,
+                        onClick = { selectedTripForDetail = trip },
                         onDelete = { tripToDelete = trip }
                     )
                 }
@@ -254,6 +278,18 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
+    }
+
+    // Detail Dialog with Interactive Map & Comprehensive Metrics
+    selectedTripForDetail?.let { trip ->
+        TripDetailDialog(
+            trip = trip,
+            onDismiss = { selectedTripForDetail = null },
+            onDelete = {
+                tripToDelete = trip
+                selectedTripForDetail = null
+            }
+        )
     }
 
     // Confirm Clear All Dialog
@@ -312,10 +348,13 @@ fun TripHistoryScreen(viewModel: MainViewModel) {
 @Composable
 fun TripRecordCard(
     trip: TripRecord,
+    onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
         border = BorderStroke(1.dp, DarkSurfaceBorder)
     ) {
@@ -330,8 +369,17 @@ fun TripRecordCard(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(trip.formattedTimeRange, color = TextMuted, fontSize = 12.sp)
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = "Xóa", tint = TextMuted, modifier = Modifier.size(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "Xóa", tint = TextMuted, modifier = Modifier.size(16.dp))
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "Xem chi tiết",
+                        tint = YamahaCyan,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
 
@@ -365,5 +413,273 @@ fun TripRecordCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun TripDetailDialog(
+    trip: TripRecord,
+    onDismiss: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val scrollState = rememberScrollState()
+    val polyPoints = remember(trip) { trip.getParsedPolylinePoints() }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .padding(vertical = 24.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = DarkSurface),
+            border = BorderStroke(1.dp, DarkSurfaceBorder)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp)
+                    .verticalScroll(scrollState)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Chi tiết lộ trình",
+                            color = TextPrimary,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${trip.formattedDate} · ${trip.formattedTimeRange}",
+                            color = TextSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Đóng", tint = TextPrimary)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Map View Preview
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, DarkSurfaceBorder)
+                ) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            MapView(ctx).apply {
+                                setMultiTouchControls(true)
+                                zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
+                                isTilesScaledToDpi = true
+
+                                val pointsToDraw = if (polyPoints.isNotEmpty()) {
+                                    polyPoints.map { GeoPoint(it.latitude, it.longitude) }
+                                } else if (trip.startLatitude != 0.0 && trip.endLatitude != 0.0) {
+                                    listOf(
+                                        GeoPoint(trip.startLatitude, trip.startLongitude),
+                                        GeoPoint(trip.endLatitude, trip.endLongitude)
+                                    )
+                                } else {
+                                    emptyList()
+                                }
+
+                                if (pointsToDraw.isNotEmpty()) {
+                                    val polyline = OsmPolyline().apply {
+                                        outlinePaint.color = android.graphics.Color.parseColor("#00E5FF")
+                                        outlinePaint.strokeWidth = 14f
+                                        setPoints(pointsToDraw)
+                                    }
+                                    overlays.add(polyline)
+
+                                    // Start marker
+                                    val startPoint = pointsToDraw.first()
+                                    val startMarker = OsmMarker(this).apply {
+                                        position = startPoint
+                                        title = "Xuất phát"
+                                        snippet = trip.startAddress
+                                        icon = ContextCompat.getDrawable(ctx, R.drawable.ic_marker_user_puck)
+                                        setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_CENTER)
+                                    }
+                                    overlays.add(startMarker)
+
+                                    // End marker
+                                    val endPoint = pointsToDraw.last()
+                                    val endMarker = OsmMarker(this).apply {
+                                        position = endPoint
+                                        title = "Điểm kết thúc"
+                                        snippet = trip.endAddress
+                                        icon = ContextCompat.getDrawable(ctx, R.drawable.ic_marker_google_pin)
+                                        setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
+                                    }
+                                    overlays.add(endMarker)
+
+                                    // Zoom to BoundingBox
+                                    val lats = pointsToDraw.map { it.latitude }
+                                    val lons = pointsToDraw.map { it.longitude }
+                                    val minLat = lats.minOrNull() ?: 0.0
+                                    val maxLat = lats.maxOrNull() ?: 0.0
+                                    val minLon = lons.minOrNull() ?: 0.0
+                                    val maxLon = lons.maxOrNull() ?: 0.0
+
+                                    val latMargin = ((maxLat - minLat) * 0.2).coerceAtLeast(0.003)
+                                    val lonMargin = ((maxLon - minLon) * 0.2).coerceAtLeast(0.003)
+                                    val box = BoundingBox(
+                                        maxLat + latMargin,
+                                        maxLon + lonMargin,
+                                        minLat - latMargin,
+                                        minLon - lonMargin
+                                    )
+                                    post {
+                                        try {
+                                            zoomToBoundingBox(box, false, 60)
+                                        } catch (_: Exception) {
+                                            controller.setCenter(startPoint)
+                                            controller.setZoom(15.0)
+                                        }
+                                    }
+                                } else {
+                                    controller.setCenter(GeoPoint(trip.startLatitude, trip.startLongitude))
+                                    controller.setZoom(15.0)
+                                }
+                            }
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Metrics Grid
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(DarkSurfaceCard)
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    TripMetricRow(title = "Quãng đường", value = trip.formattedDistance, icon = Icons.Default.Straighten, tint = NeonGreen)
+                    TripMetricRow(title = "Thời gian di chuyển", value = trip.formattedDuration, icon = Icons.Default.Timer, tint = YamahaCyan)
+                    TripMetricRow(title = "Tốc độ trung bình", value = "${trip.averageSpeedKmh} km/h", icon = Icons.Default.Speed, tint = NeonOrange)
+                    TripMetricRow(title = "Tốc độ tối đa", value = "${trip.maxSpeedKmh} km/h", icon = Icons.Default.Speed, tint = NeonRed)
+                    TripMetricRow(title = "Trạng thái đỗ xe", value = trip.relativeParkingDuration, icon = Icons.Default.Place, tint = YamahaCyan)
+                    TripMetricRow(title = "Xe máy", value = trip.bikeName, icon = Icons.Default.TwoWheeler, tint = NeonPurple)
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Addresses
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(DarkSurfaceCard)
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("CHI TIẾT ĐỊA ĐIỂM", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+                    Row(verticalAlignment = Alignment.Top) {
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(NeonGreen)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text("Điểm xuất phát:", color = TextSecondary, fontSize = 11.sp)
+                            Text(
+                                text = if (trip.startAddress.isNotBlank()) trip.startAddress else "Không có địa chỉ",
+                                color = TextPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.Top) {
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(NeonRed)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text("Điểm kết thúc:", color = TextSecondary, fontSize = 11.sp)
+                            Text(
+                                text = if (trip.endAddress.isNotBlank()) trip.endAddress else "Không có địa chỉ",
+                                color = TextPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // Actions
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    OutlinedButton(
+                        onClick = onDelete,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonRed),
+                        border = BorderStroke(1.dp, NeonRed.copy(alpha = 0.6f)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Xóa chuyến này", fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(containerColor = YamahaCyan),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Đóng", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TripMetricRow(
+    title: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = title, color = TextSecondary, fontSize = 12.sp)
+        }
+        Text(text = value, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }

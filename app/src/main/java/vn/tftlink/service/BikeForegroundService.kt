@@ -132,11 +132,22 @@ class BikeForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val stopIntent = Intent(this, BikeForegroundService::class.java).apply {
+            action = ACTION_STOP
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this,
+            1,
+            stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("MyNMAX • Yamaha CCU Companion")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_menu_directions)
             .setContentIntent(pendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Tắt chạy ngầm", stopPendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -147,22 +158,43 @@ class BikeForegroundService : Service() {
         manager?.notify(NOTIFICATION_ID, buildNotification(contentText))
     }
 
+    private var isHighAccuracyMode: Boolean? = null
+
     @SuppressLint("MissingPermission")
-    private fun startLocationUpdates() {
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
-            .setMinUpdateIntervalMillis(500L)
-            .setMinUpdateDistanceMeters(1f)
-            .build()
+    private fun adjustLocationUpdates(highAccuracy: Boolean) {
+        if (isHighAccuracyMode == highAccuracy && locationCallback != null) return
+        isHighAccuracyMode = highAccuracy
 
-        locationCallback = object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                val loc = result.lastLocation ?: return
-                val latLng = LatLng(loc.latitude, loc.longitude)
-                val speedKmh = loc.speed * 3.6
-                val bearing = if (loc.hasBearing()) loc.bearing else 0f
+        locationCallback?.let {
+            try {
+                fusedLocationClient.removeLocationUpdates(it)
+            } catch (_: Exception) {}
+        }
 
-                navEngine.updateLocation(latLng, speedKmh, bearing)
-                tripManager.updateLocation(latLng, speedKmh)
+        // Chế độ tiết kiệm pin tối đa khi chưa kết nối xe (30s) vs 1s khi đang lái xe/dẫn đường
+        val request = if (highAccuracy) {
+            LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
+                .setMinUpdateIntervalMillis(500L)
+                .setMinUpdateDistanceMeters(1f)
+                .build()
+        } else {
+            LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 30000L)
+                .setMinUpdateIntervalMillis(15000L)
+                .setMinUpdateDistanceMeters(20f)
+                .build()
+        }
+
+        if (locationCallback == null) {
+            locationCallback = object : LocationCallback() {
+                override fun onLocationResult(result: LocationResult) {
+                    val loc = result.lastLocation ?: return
+                    val latLng = LatLng(loc.latitude, loc.longitude)
+                    val speedKmh = loc.speed * 3.6
+                    val bearing = if (loc.hasBearing()) loc.bearing else 0f
+
+                    navEngine.updateLocation(latLng, speedKmh, bearing)
+                    tripManager.updateLocation(latLng, speedKmh)
+                }
             }
         }
 
@@ -171,20 +203,36 @@ class BikeForegroundService : Service() {
         } catch (_: SecurityException) {}
     }
 
+    private fun startLocationUpdates() {
+        adjustLocationUpdates(highAccuracy = false)
+    }
+
+    private fun checkAndApplyLocationPowerPolicy() {
+        val isBikeConnected = ccuManager.state.value == BikeConnectionState.CONNECTED ||
+                ccuManager.state.value == BikeConnectionState.STREAMING
+        val isNavigating = navEngine.isNavigating.value
+        val isRecordingTrip = tripManager.isRecordingSession.value
+
+        val needHighAccuracy = isBikeConnected || isNavigating || isRecordingTrip
+        adjustLocationUpdates(highAccuracy = needHighAccuracy)
+    }
+
     private fun getStatusNotificationText(): String {
         val bikeName = ccuManager.connectedBike.value?.name ?: "Yamaha NMAX"
         return when (ccuManager.state.value) {
             BikeConnectionState.CONNECTED, BikeConnectionState.STREAMING -> "Đã kết nối $bikeName • Đang hoạt động"
             BikeConnectionState.CONNECTING, BikeConnectionState.AUTHENTICATING -> "Đang kết nối tới $bikeName..."
-            else -> "Chưa kết nối xe • Đang chờ bật khóa điện"
+            else -> "Chưa kết nối xe • Chế độ tiết kiệm pin"
         }
     }
 
     private fun observeSystemStates() {
-        // Cập nhật thông báo theo trạng thái xe
+        // Cập nhật thông báo và chế độ định vị tiết kiệm pin theo trạng thái xe
         serviceScope.launch {
             ccuManager.state.collectLatest { state ->
                 val bikeName = ccuManager.connectedBike.value?.name ?: "Yamaha NMAX"
+                checkAndApplyLocationPowerPolicy()
+
                 if (!navEngine.isNavigating.value) {
                     updateNotification(getStatusNotificationText())
                 }
@@ -201,11 +249,20 @@ class BikeForegroundService : Service() {
         // Theo dõi trạng thái dẫn đường: khi tắt dẫn đường, hoàn nguyên ngay lập tức thông báo về trạng thái xe
         serviceScope.launch {
             navEngine.isNavigating.collectLatest { isNav ->
+                checkAndApplyLocationPowerPolicy()
+
                 if (!isNav) {
                     updateNotification(getStatusNotificationText())
                     val loc = navEngine.currentLocation.value ?: navEngine.getEffectiveLocation()
                     tripManager.endTripSession(loc)
                 }
+            }
+        }
+
+        // Theo dõi trạng thái phiên chuyến đi
+        serviceScope.launch {
+            tripManager.isRecordingSession.collectLatest {
+                checkAndApplyLocationPowerPolicy()
             }
         }
 
