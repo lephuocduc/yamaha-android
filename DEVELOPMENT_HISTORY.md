@@ -947,3 +947,17 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - Loại bỏ nút "Xóa chuyến này" trong hộp thoại xem chi tiết, thay bằng nút "Đóng" toàn chiều rộng tinh tế.
      - Xóa bỏ hoàn toàn các hộp thoại xác nhận xóa lộ trình khỏi giao diện.
 
+### 📌 Quy tắc 22: Chuẩn hóa tính toán Thời gian dự kiến đến (ETA) & Đồng bộ khi Đổi lộ trình thay thế (v0.5.44 - Build 74)
+- **Vấn đề đã gặp**:
+  1. **Thời gian dự kiến đến (ETA) nhanh bất thường so với app iOS cũ**: Trước đây trong `NavigationEngine.kt`, hàm `updateRemainingDistanceAndETA()` tính khoảng cách còn lại bằng khoảng cách đường chim bay (`GeoUtils.computeDistanceMeters(loc, dest)`) rồi chia cho vận tốc tức thời của xe (`speedMps`). Trong đô thị, đường chim bay thường chỉ bằng 35% - 50% chiều dài đường đi thực tế; cộng với việc chia cho vận tốc xe đang chạy (40 - 50 km/h) khiến ETA hiển thị chỉ còn 5 - 6 phút cho quãng đường thực tế 10 km (vốn mất 25 - 30 phút vì đèn đỏ và ngã rẽ).
+  2. **Thời gian và ETA không thay đổi khi đổi lộ trình**: Khi người dùng bấm chuyển sang Tuyến 2 (Tuyến thay thế), hàm `selectRoute(route)` chỉ gán lại tuyến đường mà không gọi `updateRemainingDistanceAndETA()`. Đồng thời, do công thức cũ tính theo đường chim bay tới toạ độ đích (vốn giống nhau cho mọi tuyến đường) nên ETA và khoảng cách bị "đóng băng", không phản ánh sự chênh lệch thời gian giữa Tuyến 1 và Tuyến 2.
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Đồng bộ công thức ETA chuẩn xác theo app iOS (`NavigationEngine.kt`)**:
+     - Khoảng cách còn lại (`remainingMeters`) được tính bằng khoảng cách từ vị trí GPS hiện tại tới điểm rẽ tiếp theo cộng với tổng chiều dài của tất cả các bước (steps) còn lại dọc theo tuyến đường.
+     - Thời gian di chuyển còn lại (`remainingSec`) được tính dựa trên `route.durationSeconds` (thời gian chuẩn do Valhalla / OSRM tính toán dựa trên giới hạn tốc độ và loại đường xe máy) nhân với tỷ lệ quãng đường còn lại (`remainingMeters / totalDistance`).
+     - Thời gian dự kiến đến (ETA) luôn ổn định, thực tế và đếm ngược dần về 0 khi tới đích.
+  2. **Cập nhật tức thì khi chuyển đổi tuyến đường (`selectRoute`)**:
+     - Khi người dùng bấm chọn Tuyến 1 hoặc Tuyến 2 (trên HUD hoặc chạm vào polyline trên bản đồ), hàm `selectRoute()` lập tức gọi `updateRemainingDistanceAndETA()` và `updateCurrentInstructionUI()`. Thông số ETA, khoảng cách và tên đường trên điện thoại lẫn đồng hồ TFT xe máy sẽ cập nhật ngay lập tức theo tuyến đường mới được chọn.
+  3. **Bổ sung cấu hình xe máy Valhalla**:
+     - Thêm `alley_factor: 5.0` (phạt nặng việc rẽ vào ngõ nhỏ) và `top_speed: 65` (tốc độ tối đa xe máy) khớp 100% với cấu hình của app iOS.
+

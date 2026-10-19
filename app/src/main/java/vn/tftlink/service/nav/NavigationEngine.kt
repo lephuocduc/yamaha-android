@@ -751,6 +751,8 @@ class NavigationEngine private constructor(
                         put("use_primary", 0.9)  // Ưu tiên đường lớn, đại lộ
                         put("use_tolls", 0.0)    // Tránh trạm thu phí
                         put("use_trails", 0.0)   // Tránh đường mòn
+                        put("alley_factor", 5.0) // Phạt nặng việc rẽ vào ngõ ngách, đường hẻm nhỏ hẹp
+                        put("top_speed", 65)     // Tốc độ di chuyển thực tế của xe máy (km/h)
                     }))
                     put("alternates", if (stops.isEmpty()) 2 else 0)
                     put("directions_options", JSONObject().put("units", "kilometers").put("language", "vi-VN"))
@@ -1130,6 +1132,7 @@ class NavigationEngine private constructor(
         this.routeSteps = target.steps
         this.currentStepIndex = 0
         _arrivalMessage.value = null
+        updateRemainingDistanceAndETA()
         updateCurrentInstructionUI()
     }
 
@@ -1271,23 +1274,45 @@ class NavigationEngine private constructor(
         return GeoUtils.computeDistanceMeters(p, projection)
     }
 
-    private fun updateRemainingDistanceAndETA() {
+    fun updateRemainingDistanceAndETA() {
         val route = _activeRoute.value ?: return
-        val loc = _currentLocation.value ?: return
-        val dest = destinationCoordinate ?: return
+        val loc = _currentLocation.value
 
-        val distToDest = GeoUtils.computeDistanceMeters(loc, dest).toInt()
-        val speedMps = (_currentSpeedKmh.value * 1000.0 / 3600.0).coerceAtLeast(6.0) // Giả định tốc độ tối thiểu 20 km/h
-        val remainingSec = (distToDest / speedMps).toInt()
+        var remainingMeters = 0
+        if (loc != null && routeSteps.isNotEmpty() && currentStepIndex in routeSteps.indices) {
+            val curStepCoord = routeSteps[currentStepIndex].coordinate
+            val distToStep = GeoUtils.computeDistanceMeters(loc, curStepCoord).toInt()
+            remainingMeters += distToStep
+
+            for (i in (currentStepIndex + 1) until routeSteps.size) {
+                remainingMeters += routeSteps[i].distanceMeters
+            }
+        } else {
+            remainingMeters = route.distanceMeters.toInt()
+        }
+
+        // Tỷ lệ khoảng cách còn lại so với tổng quãng đường lộ trình
+        val totalDistance = route.distanceMeters.coerceAtLeast(1.0)
+        val progress = (remainingMeters.toDouble() / totalDistance).coerceIn(0.0, 1.0)
+
+        // Thời gian di chuyển còn lại được tính chuẩn xác từ route.durationSeconds (do Valhalla/OSRM tính theo cung đường và giới hạn tốc độ xe máy)
+        val remainingSec = (route.durationSeconds * progress).roundToInt().coerceAtLeast(0)
 
         val etaTime = Date(System.currentTimeMillis() + remainingSec * 1000L)
         val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
         val etaStr = sdf.format(etaTime)
+
         val mins = (remainingSec / 60).coerceAtLeast(1)
-        val timeFormatted = if (mins < 60) "$mins phút" else "${mins / 60}h ${mins % 60}p"
+        val timeFormatted = if (remainingSec < 3600) {
+            "$mins phút"
+        } else {
+            val hours = remainingSec / 3600
+            val remMins = (remainingSec % 3600) / 60
+            "${hours}h ${remMins}p"
+        }
 
         val inst = _currentInstruction.value.copy(
-            totalDistanceRemainingMeters = distToDest,
+            totalDistanceRemainingMeters = remainingMeters,
             totalTimeRemainingSeconds = remainingSec,
             etaString = etaStr,
             remainingTimeFormatted = timeFormatted,

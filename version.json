@@ -1,6 +1,6 @@
 {
-  "versionCode": 73,
-  "versionName": "0.5.43",
-  "releaseNotes": "1) Khắc phục triệt để lỗi không ghép đôi được Bluetooth với xe từ Cài đặt máy (báo 'waiting for approval from ...' rồi 'pairing failed'): Chặn auto-connect với thiết bị đang bonding hoặc chưa ghép đôi (BOND_NONE), tạm dừng scan BLE khi hệ điều hành đang ghép đôi và hoãn kết nối SPP RFCOMM tới khi BLE GATT đã xác thực thành công; 2) Đồng bộ hoàn chỉnh chức năng North-Up & Heading Tracking chuẩn theo iOS: tích hợp cảm biến la bàn điện tử khi xe đứng yên (< 3 km/h), ưu tiên GPS course khi lăn bánh (>= 3 km/h), đồng bộ streamRenderer.isNorthUp với màn hình xe TFT, thiết kế nút FAB chuyển đổi 2 chế độ BẮC (Đỏ) và THEO XE (Cyan) chuẩn app iOS; 3) Bảo vệ vĩnh viễn lộ trình di chuyển: loại bỏ tất cả các nút xóa và hộp thoại xác nhận xóa để bảo toàn dữ liệu lịch sử chuyến đi.",
+  "versionCode": 74,
+  "versionName": "0.5.44",
+  "releaseNotes": "1) Khắc phục triệt để lỗi thời gian dự kiến đến (ETA) nhanh bất thường và không thay đổi khi chuyển đổi lộ trình: Chuyển từ tính khoảng cách đường chim bay sang tính tổng chiều dài các bước thực tế của lộ trình và thời gian dự kiến durationSeconds chuẩn từ Valhalla/OSRM; 2) Tự động tính toán lại ngay lập tức thời gian và giờ đến (ETA) khi người dùng chọn tuyến đường thay thế (Tuyến 2); 3) Bổ sung hệ số alley_factor (5.0) và top_speed (65 km/h) vào cấu hình xe máy Valhalla đồng bộ hoàn toàn với bản iOS.",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }
