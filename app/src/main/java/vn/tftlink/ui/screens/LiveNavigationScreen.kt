@@ -247,9 +247,42 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
         }
     }
 
+    var orientationAnimator by remember { mutableStateOf<android.animation.ValueAnimator?>(null) }
+
     LaunchedEffect(heading, isNorthUp) {
         osmdroidMapView?.let { mv ->
-            mv.mapOrientation = if (isNorthUp) 0f else -heading
+            val target = if (isNorthUp) 0f else ((-heading % 360f) + 360f) % 360f
+            val current = mv.mapOrientation
+            var diff = (target - current) % 360f
+            if (diff > 180f) diff -= 360f
+            if (diff < -180f) diff += 360f
+
+            if (isNorthUp) {
+                if (kotlin.math.abs(diff) >= 0.8f) {
+                    orientationAnimator?.cancel()
+                    orientationAnimator = android.animation.ValueAnimator.ofFloat(current, current + diff).apply {
+                        duration = 350L
+                        interpolator = android.view.animation.DecelerateInterpolator()
+                        addUpdateListener { anim ->
+                            mv.mapOrientation = ((anim.animatedValue as Float) % 360f + 360f) % 360f
+                        }
+                        start()
+                    }
+                }
+            } else {
+                // Head-tracking: chỉ xoay khi độ lệch >= 2.0° để triệt tiêu rung giật la bàn (jitter damping)
+                if (kotlin.math.abs(diff) >= 2.0f) {
+                    orientationAnimator?.cancel()
+                    orientationAnimator = android.animation.ValueAnimator.ofFloat(current, current + diff).apply {
+                        duration = 200L
+                        interpolator = android.view.animation.DecelerateInterpolator()
+                        addUpdateListener { anim ->
+                            mv.mapOrientation = ((anim.animatedValue as Float) % 360f + 360f) % 360f
+                        }
+                        start()
+                    }
+                }
+            }
         }
     }
 
@@ -1009,7 +1042,21 @@ fun LiveNavigationScreen(viewModel: MainViewModel) {
                     val targetIsNorthUp = !isNorthUp
                     viewModel.toggleNorthUp()
                     osmdroidMapView?.let { mv ->
-                        mv.mapOrientation = if (targetIsNorthUp) 0f else -heading
+                        val target = if (targetIsNorthUp) 0f else ((-heading % 360f) + 360f) % 360f
+                        val current = mv.mapOrientation
+                        var diff = (target - current) % 360f
+                        if (diff > 180f) diff -= 360f
+                        if (diff < -180f) diff += 360f
+
+                        orientationAnimator?.cancel()
+                        orientationAnimator = android.animation.ValueAnimator.ofFloat(current, current + diff).apply {
+                            duration = 350L
+                            interpolator = android.view.animation.DecelerateInterpolator()
+                            addUpdateListener { anim ->
+                                mv.mapOrientation = ((anim.animatedValue as Float) % 360f + 360f) % 360f
+                            }
+                            start()
+                        }
                     }
                     val msg = if (targetIsNorthUp) "Chế độ bản đồ: Cố định hướng Bắc (North-Up - chữ xuôi)" else "Chế độ bản đồ: Xoay theo đầu xe (chữ bản đồ sẽ xoay theo góc lái)"
                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()

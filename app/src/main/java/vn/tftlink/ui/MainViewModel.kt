@@ -166,18 +166,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ccuManager.onGoHome = { navigateToHome() }
         ccuManager.onGoToWork = { navigateToWork() }
         ccuManager.onFindGasStation = { navEngine.fetchNearbyGasStations() }
+        var wasConnected = false
         ccuManager.onBikeConnected = {
+            wasConnected = true
             ccuManager.log("Đã kết nối xe máy Yamaha - Bắt đầu truyền luồng màn hình")
             if (_isStreaming.value) {
                 ccuManager.startStreaming()
             }
         }
         ccuManager.onBikeDisconnected = {
-            val loc = navEngine.currentLocation.value
-            val bikeName = connectedBike.value?.name ?: "Yamaha NMAX"
-            if (loc != null) {
-                parkingManager.recordParkingLocation(loc, bikeName)
-                tripManager.endTripSession(loc)
+            if (wasConnected) {
+                wasConnected = false
+                val loc = navEngine.currentLocation.value ?: navEngine.getEffectiveLocation()
+                val bikeName = connectedBike.value?.name ?: "Yamaha NMAX"
+                if (loc.latitude != 0.0 && loc.longitude != 0.0) {
+                    parkingManager.recordParkingLocation(loc, bikeName, forceNewTimestamp = false)
+                    tripManager.endTripSession(loc)
+                }
             }
         }
     }

@@ -389,77 +389,147 @@ class NavigationEngine private constructor(
     }
 
     /**
-     * Tra cứu địa chỉ từ toạ độ (Reverse Geocode) bằng Photon OSM và Android Geocoder
+     * Tra cứu địa chỉ chi tiết từ toạ độ (Reverse Geocode).
+     * Ưu tiên 1: Android Geocoder (dữ liệu Google Maps chi tiết có số nhà, tên đường, phường xã, quận huyện).
+     * Ưu tiên 2: OpenStreetMap Nominatim zoom=18 (hỗ trợ số nhà OSM).
+     * Ưu tiên 3: Photon Komoot OSM.
      */
-    fun reverseGeocode(latLng: LatLng, onResult: (title: String, address: String) -> Unit) {
-        engineScope.launch(Dispatchers.IO) {
-            var title = "Vị trí đã chọn"
-            var address = String.format(Locale.US, "%.5f, %.5f", latLng.latitude, latLng.longitude)
+    suspend fun reverseGeocodeSuspend(latLng: LatLng): Pair<String, String> = withContext(Dispatchers.IO) {
+        var defaultTitle = "Vị trí đã chọn"
+        var defaultAddress = String.format(Locale.US, "%.5f, %.5f", latLng.latitude, latLng.longitude)
 
-            // 1. Thử Photon OpenStreetMap Reverse Geocoder (nhanh, chính xác, không giới hạn IP)
-            try {
-                val url = "$PHOTON_URL/reverse?lat=${latLng.latitude}&lon=${latLng.longitude}"
-                val request = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) NConnect-Yamaha/1.0")
-                    .build()
-                val response = httpClient.newCall(request).execute()
-                response.use { resp ->
-                    if (resp.isSuccessful) {
-                        val body = resp.body?.string() ?: ""
-                        val json = JSONObject(body)
-                        val features = json.optJSONArray("features")
-                        if (features != null && features.length() > 0) {
-                            val props = features.getJSONObject(0).optJSONObject("properties")
-                            if (props != null) {
-                                val name = props.optString("name", "")
-                                val street = props.optString("street", "")
-                                val housenumber = props.optString("housenumber", "")
-                                val district = props.optString("district", props.optString("county", props.optString("locality", "")))
-                                val city = props.optString("city", props.optString("state", "Việt Nam"))
+        // 1. Ưu tiên hàng đầu: Android native Geocoder (kết nối trực tiếp cơ sở dữ liệu số nhà Google Maps tại VN)
+        try {
+            val geocoder = Geocoder(context, Locale("vi", "VN"))
+            @Suppress("DEPRECATION")
+            val list = geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1)
+            if (!list.isNullOrEmpty()) {
+                val p = list[0]
+                val fullAddressLine = p.getAddressLine(0)
+                val houseNumber = p.subThoroughfare?.trim().orEmpty()
+                val street = p.thoroughfare?.trim().orEmpty()
+                val feature = p.featureName?.trim().orEmpty()
 
-                                val streetPart = if (housenumber.isNotBlank() && street.isNotBlank()) "$housenumber $street" else if (street.isNotBlank()) street else ""
-                                val cleanTitle = when {
-                                    name.isNotBlank() -> name
-                                    streetPart.isNotBlank() -> streetPart
-                                    district.isNotBlank() -> district
-                                    city.isNotBlank() -> city
-                                    else -> "Điểm đã ghim"
-                                }
-                                title = cleanTitle
+                val streetWithNum = when {
+                    houseNumber.isNotBlank() && street.isNotBlank() -> {
+                        if (street.contains(houseNumber)) street else "$houseNumber $street"
+                    }
+                    street.isNotBlank() -> street
+                    houseNumber.isNotBlank() -> houseNumber
+                    else -> ""
+                }
 
-                                val addrParts = listOfNotNull(
-                                    if (name.isNotBlank() && name != streetPart) name else null,
-                                    streetPart.ifBlank { null },
-                                    district.ifBlank { null },
-                                    city.ifBlank { null }
-                                )
-                                if (addrParts.isNotEmpty()) {
-                                    address = addrParts.joinToString(", ")
-                                }
-                                withContext(Dispatchers.Main) { onResult(title, address) }
-                                return@launch
+                val title = when {
+                    feature.isNotBlank() && feature != street && feature != houseNumber && !feature.matches(Regex("""^-?\d+\.\d+.*""")) -> feature
+                    streetWithNum.isNotBlank() -> streetWithNum
+                    else -> p.subLocality ?: p.locality ?: defaultTitle
+                }
+
+                val parts = listOfNotNull(
+                    streetWithNum.ifBlank { null },
+                    p.subLocality?.ifBlank { null },
+                    p.locality?.ifBlank { null },
+                    p.subAdminArea?.ifBlank { null },
+                    p.adminArea?.ifBlank { null }
+                )
+                val fallbackFormatted = if (parts.isNotEmpty()) parts.joinToString(", ") else defaultAddress
+                val address = fullAddressLine?.takeIf { it.isNotBlank() } ?: fallbackFormatted
+
+                return@withContext Pair(title, address)
+            }
+        } catch (_: Exception) {}
+
+        // 2. Dự phòng: Nominatim OpenStreetMap (zoom=18 chi tiết đến số nhà và toà nhà)
+        try {
+            val nominatimUrl = "https://nominatim.openstreetmap.org/reverse?format=json&lat=${latLng.latitude}&lon=${latLng.longitude}&zoom=18&addressdetails=1"
+            val request = Request.Builder()
+                .url(nominatimUrl)
+                .header("User-Agent", "TFTLink-YamahaCompanion/1.0 (motorcycle nav)")
+                .header("Accept-Language", "vi,en")
+                .build()
+            val response = httpClient.newCall(request).execute()
+            response.use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string().orEmpty()
+                    val json = JSONObject(body)
+                    val displayName = json.optString("display_name", "")
+                    val addrObj = json.optJSONObject("address")
+                    if (addrObj != null) {
+                        val houseNum = addrObj.optString("house_number", "")
+                        val road = addrObj.optString("road", addrObj.optString("pedestrian", ""))
+                        val suburb = addrObj.optString("suburb", addrObj.optString("quarter", ""))
+                        val cityDistrict = addrObj.optString("city_district", addrObj.optString("district", ""))
+                        val city = addrObj.optString("city", addrObj.optString("state", "Việt Nam"))
+
+                        val streetPart = if (houseNum.isNotBlank() && road.isNotBlank()) "$houseNum $road" else road
+                        val title = streetPart.ifBlank { suburb.ifBlank { city.ifBlank { defaultTitle } } }
+                        val formatted = listOfNotNull(
+                            streetPart.ifBlank { null },
+                            suburb.ifBlank { null },
+                            cityDistrict.ifBlank { null },
+                            city.ifBlank { null }
+                        ).joinToString(", ")
+                        val address = if (formatted.isNotBlank()) formatted else displayName.ifBlank { defaultAddress }
+                        return@withContext Pair(title, address)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 3. Dự phòng cấp 3: Photon OSM
+        try {
+            val url = "$PHOTON_URL/reverse?lat=${latLng.latitude}&lon=${latLng.longitude}"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) NConnect-Yamaha/1.0")
+                .build()
+            val response = httpClient.newCall(request).execute()
+            response.use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string().orEmpty()
+                    val json = JSONObject(body)
+                    val features = json.optJSONArray("features")
+                    if (features != null && features.length() > 0) {
+                        val props = features.getJSONObject(0).optJSONObject("properties")
+                        if (props != null) {
+                            val name = props.optString("name", "")
+                            val street = props.optString("street", "")
+                            val housenumber = props.optString("housenumber", "")
+                            val district = props.optString("district", props.optString("county", props.optString("locality", "")))
+                            val city = props.optString("city", props.optString("state", "Việt Nam"))
+
+                            val streetPart = if (housenumber.isNotBlank() && street.isNotBlank()) "$housenumber $street" else street
+                            val cleanTitle = when {
+                                name.isNotBlank() -> name
+                                streetPart.isNotBlank() -> streetPart
+                                district.isNotBlank() -> district
+                                city.isNotBlank() -> city
+                                else -> defaultTitle
                             }
+
+                            val addrParts = listOfNotNull(
+                                if (name.isNotBlank() && name != streetPart) name else null,
+                                streetPart.ifBlank { null },
+                                district.ifBlank { null },
+                                city.ifBlank { null }
+                            )
+                            val address = if (addrParts.isNotEmpty()) addrParts.joinToString(", ") else defaultAddress
+                            return@withContext Pair(cleanTitle, address)
                         }
                     }
                 }
-            } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
 
-            // 2. Thử Android Geocoder
-            try {
-                val geocoder = Geocoder(context, Locale("vi", "VN"))
-                @Suppress("DEPRECATION")
-                val list = geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1)
-                if (!list.isNullOrEmpty()) {
-                    val p = list[0]
-                    title = p.featureName ?: p.thoroughfare ?: title
-                    val parts = listOfNotNull(p.subThoroughfare, p.thoroughfare, p.subLocality, p.locality, p.adminArea)
-                    if (parts.isNotEmpty()) address = parts.joinToString(", ")
-                    withContext(Dispatchers.Main) { onResult(title, address) }
-                    return@launch
-                }
-            } catch (_: Exception) {}
+        Pair(defaultTitle, defaultAddress)
+    }
 
+    /**
+     * Tra cứu địa chỉ từ toạ độ (Reverse Geocode) có gọi lại callback trên Main thread.
+     */
+    fun reverseGeocode(latLng: LatLng, onResult: (title: String, address: String) -> Unit) {
+        engineScope.launch(Dispatchers.IO) {
+            val (title, address) = reverseGeocodeSuspend(latLng)
             withContext(Dispatchers.Main) {
                 onResult(title, address)
             }
@@ -657,6 +727,7 @@ class NavigationEngine private constructor(
                     .url(url)
                     .post(requestBody)
                     .header("User-Agent", "TFTLink/0.1 (personal motorcycle display app)")
+                    .header("X-Client-Id", "TFTLink-YamahaCompanion")
                     .header("Accept", "application/json")
                     .build()
 
@@ -675,7 +746,7 @@ class NavigationEngine private constructor(
                         ccuManager?.log("Valhalla[${variant.label}] qua HttpURLConnection thành công")
                     }
                 } catch (fallbackEx: Exception) {
-                    ccuManager?.log("Valhalla[${variant.label}] lỗi mạng: ${e.javaClass.simpleName} / HttpURLConnection: ${fallbackEx.javaClass.simpleName}")
+                    ccuManager?.log("Valhalla[${variant.label}] lỗi mạng: ${e.javaClass.simpleName}: ${e.message} / HttpURLConnection: ${fallbackEx.javaClass.simpleName}: ${fallbackEx.message}")
                     return@withContext emptyList()
                 }
             }
@@ -708,6 +779,7 @@ class NavigationEngine private constructor(
         val conn = NetworkUtils.openHttpsConnection(getUrl).apply {
             requestMethod = "GET"
             setRequestProperty("User-Agent", "TFTLink/0.1 (personal motorcycle display app)")
+            setRequestProperty("X-Client-Id", "TFTLink-YamahaCompanion")
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Accept-Language", "vi,en")
             connectTimeout = 8000

@@ -7,6 +7,8 @@ import okhttp3.TlsVersion
 import java.net.InetAddress
 import java.net.Socket
 import java.net.URL
+import org.conscrypt.Conscrypt
+import java.security.Security
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import javax.net.ssl.HostnameVerifier
@@ -19,10 +21,18 @@ import javax.net.ssl.X509TrustManager
 
 /**
  * Tiện ích mạng & cấu hình SSL/TLS tương thích cho Android 9 (API 28) và các dòng máy cũ.
- * Kích hoạt tường minh TLS 1.3 trên Android 9 (nơi TLS 1.3 mặc định bị tắt trong getEnabledProtocols),
- * cho phép kết nối thành công tới các dịch vụ OSM/Valhalla/Photon vốn chỉ chấp nhận TLS 1.3.
+ * Sử dụng bộ máy Google BoringSSL (Conscrypt) cung cấp chuẩn TLS 1.3 (RFC 8446) trọn vẹn,
+ * cho phép kết nối thành công tới các dịch vụ OSM/Valhalla/Photon vốn từ chối TLS 1.2.
  */
 object NetworkUtils {
+
+    init {
+        try {
+            if (Security.getProvider("Conscrypt") == null) {
+                Security.insertProviderAt(Conscrypt.newProvider(), 1)
+            }
+        } catch (_: Throwable) {}
+    }
 
     val trustAllManager: X509TrustManager = object : X509TrustManager {
         @SuppressLint("TrustAllX509TrustManager")
@@ -35,7 +45,12 @@ object NetworkUtils {
     }
 
     private val baseSslSocketFactory: SSLSocketFactory = try {
-        SSLContext.getInstance("TLS").apply {
+        val sslContext = try {
+            SSLContext.getInstance("TLS", Conscrypt.newProvider())
+        } catch (_: Throwable) {
+            SSLContext.getInstance("TLS")
+        }
+        sslContext.apply {
             init(null, arrayOf<TrustManager>(trustAllManager), SecureRandom())
         }.socketFactory
     } catch (_: Exception) {

@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import vn.tftlink.data.local.AppDatabase
 import vn.tftlink.data.model.trip.TripRecord
 import vn.tftlink.service.nav.NavigationEngine
+import vn.tftlink.service.nav.ParkingLocationManager
 import vn.tftlink.util.GeoUtils
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -158,9 +159,18 @@ class TripHistoryManager private constructor(
         }
 
         scope.launch(Dispatchers.IO) {
-            var endAddress = String.format(Locale.US, "%.5f, %.5f", finalEndCoord.latitude, finalEndCoord.longitude)
-            NavigationEngine.getInstance(context, scope).reverseGeocode(finalEndCoord) { title, address ->
-                endAddress = if (address.isNotBlank()) address else title
+            val (title, address) = kotlinx.coroutines.withTimeoutOrNull(3000L) {
+                NavigationEngine.getInstance(context, scope).reverseGeocodeSuspend(finalEndCoord)
+            } ?: Pair("Điểm đến", String.format(Locale.US, "%.5f, %.5f", finalEndCoord.latitude, finalEndCoord.longitude))
+            val endAddress = if (address.isNotBlank()) address else title
+
+            var finalStartAddress = sessionStartAddress
+            if (finalStartAddress.matches(Regex("""^-?\d+\.\d+,\s*-?\d+\.\d+$""")) && sessionStartCoord != null) {
+                val (sTitle, sAddr) = kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                    NavigationEngine.getInstance(context, scope).reverseGeocodeSuspend(sessionStartCoord!!)
+                } ?: Pair("", "")
+                if (sAddr.isNotBlank()) finalStartAddress = sAddr
+                else if (sTitle.isNotBlank()) finalStartAddress = sTitle
             }
 
             val record = TripRecord(
@@ -168,7 +178,7 @@ class TripHistoryManager private constructor(
                 endTime = endTimeMs,
                 startLatitude = sessionStartCoord?.latitude ?: 0.0,
                 startLongitude = sessionStartCoord?.longitude ?: 0.0,
-                startAddress = sessionStartAddress,
+                startAddress = finalStartAddress,
                 endLatitude = finalEndCoord.latitude,
                 endLongitude = finalEndCoord.longitude,
                 endAddress = endAddress,
@@ -182,7 +192,19 @@ class TripHistoryManager private constructor(
             )
 
             tripDao.insertTrip(record)
-            onSaved?.invoke(record)
+
+            // Đồng thời ghi nhận vị trí đỗ xe MỚI với thời gian kết thúc lộ trình và địa chỉ đã tra cứu chi tiết
+            ParkingLocationManager.getInstance(context).recordParkingLocation(
+                coordinate = finalEndCoord,
+                bikeName = sessionBikeName,
+                timestamp = endTimeMs,
+                explicitAddress = endAddress,
+                forceNewTimestamp = true
+            )
+
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onSaved?.invoke(record)
+            }
         }
     }
 

@@ -228,6 +228,7 @@ class BikeForegroundService : Service() {
 
     private fun observeSystemStates() {
         // Cập nhật thông báo và chế độ định vị tiết kiệm pin theo trạng thái xe
+        var wasConnectedToBike = false
         serviceScope.launch {
             ccuManager.state.collectLatest { state ->
                 val bikeName = ccuManager.connectedBike.value?.name ?: "Yamaha NMAX"
@@ -236,10 +237,14 @@ class BikeForegroundService : Service() {
                 if (!navEngine.isNavigating.value) {
                     updateNotification(getStatusNotificationText())
                 }
-                if (state == BikeConnectionState.DISCONNECTED) {
-                    // Tự động ghi lại vị trí đỗ xe khi ngắt kết nối
-                    navEngine.currentLocation.value?.let { loc ->
-                        parkingManager.recordParkingLocation(loc, bikeName)
+                if (state == BikeConnectionState.CONNECTED) {
+                    wasConnectedToBike = true
+                } else if (state == BikeConnectionState.DISCONNECTED && wasConnectedToBike) {
+                    wasConnectedToBike = false
+                    // Chỉ ghi lại vị trí đỗ xe khi xe thực sự vừa ngắt kết nối (tắt khóa điện hoặc mất BLE)
+                    val loc = navEngine.currentLocation.value ?: navEngine.getEffectiveLocation()
+                    if (loc.latitude != 0.0 && loc.longitude != 0.0) {
+                        parkingManager.recordParkingLocation(loc, bikeName, forceNewTimestamp = false)
                         tripManager.endTripSession(loc)
                     }
                 }

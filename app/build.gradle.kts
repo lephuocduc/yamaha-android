@@ -17,8 +17,8 @@ android {
         applicationId = "vn.tftlink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 71
-        versionName = "0.5.41"
+        versionCode = 72
+        versionName = "0.5.42"
 
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
 
@@ -104,6 +104,7 @@ dependencies {
     // Network & JSON
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.11.0")
+    implementation("org.conscrypt:conscrypt-android:2.5.2")
 
     // Debugging
     debugImplementation("androidx.compose.ui:ui-tooling")

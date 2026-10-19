@@ -1,6 +1,6 @@
 {
-  "versionCode": 71,
-  "versionName": "0.5.41",
-  "releaseNotes": "1) Bổ sung nhật ký chi tiết chẩn đoán kết nối BLE, Bluetooth hệ thống, GPS và tự động nhận diện xe đã ghép đôi; 2) Tối ưu hóa tiêu thụ pin cho dịch vụ nền: tự động chuyển sang chế độ định vị tiết kiệm pin khi xe ngắt kết nối và bổ sung nút 'Tắt chạy ngầm' trên thông báo; 3) Nâng cấp toàn diện tab Lộ trình: lưu trữ polyline toạ độ, thẻ chuyến đi có thể bấm vào xem chi tiết bản đồ lộ trình, vận tốc, thời gian đỗ; 4) Khắc phục lỗi xoay ngược chữ bản đồ (VivoCity) bằng cách mặc định cố định hướng Bắc (North-Up) và nâng độ phân giải ngói bản đồ HD 512px.",
+  "versionCode": 72,
+  "versionName": "0.5.42",
+  "releaseNotes": "1) Tích hợp Google BoringSSL (Conscrypt) kích hoạt chuẩn TLS 1.3 RFC 8446 đầy đủ cho Android 9 (API 28), khắc phục triệt để lỗi SSLHandshakeException khi kết nối máy chủ Valhalla Motorcycle Routing; 2) Ưu tiên Android Geocoder khi nhấn giữ bản đồ và kết thúc lộ trình để hiển thị số nhà chi tiết, tên đường, phường xã thay vì chỉ hiện tên đường hoặc toạ độ; 3) Khắc phục lỗi bất đồng bộ trong Lịch sử lộ trình: đảm bảo điểm kết thúc luôn hiển thị địa chỉ chi tiết; 4) Chuyển đổi siêu mượt mà giữa chế độ Cố định hướng Bắc (North-Up) và Theo hướng lái (Head-Tracking) bằng ValueAnimator và bộ lọc khử rung giật la bàn; 5) Đồng bộ chuẩn xác logic xác định đỗ xe theo app iOS cũ: chỉ lưu mốc đỗ xe khi xe thực sự kết nối rồi ngắt kết nối và giữ nguyên mốc thời gian cũ nếu xe chỉ bật khóa rồi tắt mà không di chuyển (<50m).",
   "downloadUrl": "https://github.com/lephuocduc/yamaha-android/releases/download/latest/app-debug.apk"
 }

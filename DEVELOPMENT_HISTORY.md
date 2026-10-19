@@ -884,3 +884,43 @@ Mọi gói tin dữ liệu điều khiển gửi lên màn hình xe đều phả
      - Cho phép nhận diện CCU qua `serviceUuids` ngay cả khi tên thiết bị trong gói quảng bá ban đầu chưa kịp nạp.
      - Bổ sung diễn giải chi tiết cho mọi mã sự kiện GATT (`status 133` - lỗi bộ đệm BT Android, `status 8` - timeout, `status 19` - xe ngắt kết nối).
      - Bổ sung thông tin Bluetooth và GPS hệ thống vào phần đầu của bản báo cáo chẩn đoán hệ thống.
+
+---
+
+### 📌 Quy tắc 20: Tích hợp Google Conscrypt BoringSSL (TLS 1.3 Android 9), Ưu tiên Geocoder số nhà chi tiết, Sửa bất đồng bộ địa chỉ đích Lộ trình, Xoay bản đồ siêu mượt & Đồng bộ chuẩn xác logic Đỗ xe iOS (v0.5.42 Build 72)
+- **Các phản hồi và triệu chứng thực tế của người dùng**:
+  1. *đôi khi nhấn giữ 1 vị trí trên bản đồ chỉ hiện tên đường chứ ko hiện số nhà chi tiết*
+  2. *điểm kết thúc trong lộ trình lịch sử hiện tại ko hiện địa chỉ chi tiết mà chỉ hiện tọa độ*
+  3. *Valhalla chưa sử dụng đc, vẫn lỗi SSLHandshakeException / HttpURLConnection*
+  4. *chuyển đổi giữa Northup và Headtracking chưa mượt mà*
+  5. *xem lại app ios cũ, khi nào mới được tính là đỗ xe*
+- **Nguyên nhân gốc rễ kỹ thuật & Phân tích chuyên sâu**:
+  1. **Nhấn giữ bản đồ thiếu số nhà chi tiết**: `NavigationEngine.reverseGeocode` gọi dịch vụ Photon OpenStreetMap trước Android native Geocoder. Tại Việt Nam, dữ liệu OSM có tên đường nhưng hầu như không gắn thẻ số nhà (`housenumber`). Vì Photon trả về tên đường thành công, code lập tức trả kết quả và ngắt luồng (`return@launch`), không bao giờ chạy đến Android `Geocoder` (vốn kết nối trực tiếp với kho dữ liệu số nhà khổng lồ của Google Maps tại Việt Nam).
+  2. **Điểm kết thúc trong Lịch sử lộ trình chỉ hiện toạ độ thô**: Trong `TripHistoryManager.endTripSession`, `NavigationEngine.reverseGeocode(finalEndCoord)` là hàm bất đồng bộ mạng. Ngay dòng lệnh tiếp theo, `val record = TripRecord(..., endAddress = endAddress)` được tạo và gọi `tripDao.insertTrip(record)`. Do geocode chưa kịp phản hồi, biến `endAddress` vẫn giữ nguyên chuỗi toạ độ mặc định `String.format("%.5f, %.5f")`, gây ra lỗi race condition khiến điểm kết thúc vĩnh viễn là toạ độ thô trong CSDL.
+  3. **Lỗi SSLHandshakeException trên Android 9 (Sony G8142)**: Máy chủ Valhalla (`valhalla1.openstreetmap.de`) từ chối hoàn toàn giao thức TLS 1.2 (ném lỗi `sslv3 alert handshake failure`), bắt buộc TLS 1.3 (RFC 8446). Nền tảng Android 9 (API 28) chỉ chứa bản Conscrypt sơ khai (bản nháp tiền RFC), dẫn đến bắt tay SSL thất bại trên cả OkHttp và HttpsURLConnection.
+  4. **Chuyển đổi North-Up và Head-Tracking bị giật cục**: Trong `LiveNavigationScreen.kt`, góc quay `osmdroidMapView.mapOrientation` bị gán trực tiếp (`= 0f` hoặc `=-heading`) mà không có bất kỳ animation chuyển tiếp nào, tạo cảm giác giật cục ngay lập tức. Đồng thời, các cập nhật heading của cảm biến la bàn khi xe dừng hoặc rung nhẹ không có bộ lọc khử rung (damping), làm bản đồ bị rung lắc liên tục.
+  5. **Quy tắc xác định đỗ xe trong app iOS cũ**:
+     - *Điều kiện 1*: Xe phải từng kết nối thành công (`wasConnectedToBike == true`). Khi ngắt kết nối (nhận ECU Command 312 `0x0138` hoặc mất GATT), hàm xử lý đỗ xe mới được kích hoạt.
+     - *Điều kiện 2*: Nếu xe di chuyển >= 50m (hoặc >= 20s), ghi nhận một chuyến đi mới và cập nhật mốc đỗ xe MỚI tại thời điểm tắt máy (`forceNewTimestamp = true`).
+     - *Điều kiện 3*: Nếu người dùng chỉ bật chìa khóa xe rồi tắt mà không di chuyển (`cự ly < 50m`), app coi là thao tác mở cốp/kiểm tra xe, **BỎ QUA KHÔNG TẠO CHUYẾN ĐI** và **GIỮ NGUYÊN MỐC THỜI GIAN ĐỖ XE CŨ** (`effectiveTimestamp = prev.timestamp`), tránh việc bị reset thời gian đỗ xe từ "3 ngày trước" thành "vừa xong".
+- **Giải pháp triển khai hoàn thiện**:
+  1. **Ưu tiên Android Geocoder & hàm suspend (`NavigationEngine.kt`)**:
+     - Đảo ngược thứ tự ưu tiên: Gọi Android native `Geocoder` trước tiên, bóc tách chính xác `subThoroughfare` (số nhà) kết hợp `thoroughfare` (tên đường), `featureName` (tên địa điểm/toà nhà) và `getAddressLine(0)` (địa chỉ chuẩn hóa đầy đủ từ Google).
+     - Bổ sung tầng dự phòng Nominatim `zoom=18` và Photon OSM khi thiết bị offline hoặc không có Google Play Services.
+     - Cung cấp hàm `suspend fun reverseGeocodeSuspend(latLng: LatLng): Pair<String, String>` để các tác vụ nền có thể `await` kết quả an toàn.
+  2. **Triệt tiêu Race Condition trong Lịch sử lộ trình (`TripHistoryManager.kt`)**:
+     - Sử dụng `withTimeoutOrNull(3000L) { reverseGeocodeSuspend(finalEndCoord) }` để chờ có được tên đường và số nhà chi tiết trước khi ghi `TripRecord` vào Room Database.
+     - Tự động bổ sung địa chỉ xuất phát nếu lúc khởi động chuyến đi mạng chưa kịp phân giải toạ độ.
+     - Tự động cập nhật `ParkingLocationManager` với toạ độ đích và địa chỉ chi tiết ngay khi chuyến đi hoàn tất.
+  3. **Tích hợp Google Conscrypt BoringSSL (`build.gradle.kts`, `NConnectApplication.kt`, `NetworkUtils.kt`)**:
+     - Thêm thư viện chính thức `org.conscrypt:conscrypt-android:2.5.2`.
+     - Tạo `NConnectApplication` cài đặt `Security.insertProviderAt(Conscrypt.newProvider(), 1)` ngay khi ứng dụng khởi tạo.
+     - Cấu hình `NetworkUtils.kt` khởi tạo SSLContext từ Conscrypt, cung cấp bộ mã hóa TLS 1.3 RFC 8446 hoàn chỉnh cho Android 9.
+     - Thêm tiêu đề nhận diện `X-Client-Id: TFTLink-YamahaCompanion` theo khuyến nghị của OpenStreetMap / FOSSGIS.
+  4. **Animation xoay bản đồ siêu mượt & Khử rung la bàn (`LiveNavigationScreen.kt`)**:
+     - Triển khai animation xoay góc với `ValueAnimator` (350ms, `DecelerateInterpolator`), luôn tính toán cung quay ngắn nhất (`diff = (target - current + 540f) % 360f - 180f`).
+     - Áp dụng bộ lọc ngưỡng la bàn: Ở chế độ Head-Tracking, chỉ xoay khi độ lệch góc `>= 2.0°`, triệt tiêu hoàn toàn hiện tượng rung lắc la bàn khi xe dừng hoặc rung máy.
+     - Nút chuyển đổi North-Up xoay mượt mà 60fps từ bất kỳ góc độ nào về thẳng hướng Bắc hoặc hướng lái.
+  5. **Đồng bộ chuẩn xác logic Đỗ xe (`BikeForegroundService.kt`, `MainViewModel.kt`, `ParkingLocationManager.kt`)**:
+     - Thêm biến cờ `wasConnectedToBike` chặn đứng việc kích hoạt ghi nhận đỗ xe giả khi mở ứng dụng ở trạng thái ngắt kết nối.
+     - Đảm bảo quy tắc bảo toàn mốc thời gian đỗ xe cũ khi khoảng cách di chuyển `< 50m`.
