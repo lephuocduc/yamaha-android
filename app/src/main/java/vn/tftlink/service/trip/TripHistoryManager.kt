@@ -194,7 +194,7 @@ class TripHistoryManager private constructor(
             tripDao.insertTrip(record)
 
             // Đồng thời ghi nhận vị trí đỗ xe MỚI với thời gian kết thúc lộ trình và địa chỉ đã tra cứu chi tiết
-            ParkingLocationManager.getInstance(context).recordParkingLocation(
+            ParkingLocationManager.getInstance(context, scope).recordParkingLocation(
                 coordinate = finalEndCoord,
                 bikeName = sessionBikeName,
                 timestamp = endTimeMs,

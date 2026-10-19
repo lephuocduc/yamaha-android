@@ -7,6 +7,8 @@ import android.net.Uri
 import com.google.android.gms.maps.model.LatLng
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,7 +28,10 @@ class ParkingLocationManager(
         @Volatile
         private var instance: ParkingLocationManager? = null
 
-        fun getInstance(context: Context, scope: CoroutineScope): ParkingLocationManager {
+        fun getInstance(
+            context: Context,
+            scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        ): ParkingLocationManager {
             return instance ?: synchronized(this) {
                 instance ?: ParkingLocationManager(context.applicationContext, scope).also { instance = it }
             }
